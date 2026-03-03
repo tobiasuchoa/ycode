@@ -2973,7 +2973,15 @@ function layerToHtml(
   const effectiveLayerDataMap = layer._layerDataMap || layerDataMap;
 
   // Get the HTML tag
-  const tag = layer.settings?.tag || layer.name || 'div';
+  let tag = layer.settings?.tag || layer.name || 'div';
+
+  // Buttons with link settings render as <a> directly instead of being
+  // wrapped in <a><button></button></a> which is invalid HTML
+  const buttonLinkSettings = layer.variables?.link;
+  const isButtonWithLink = layer.name === 'button' && buttonLinkSettings && buttonLinkSettings.type;
+  if (isButtonWithLink) {
+    tag = 'a';
+  }
 
   // Build classes string
   let classesStr = '';
@@ -2981,6 +2989,16 @@ function layerToHtml(
     classesStr = layer.classes.join(' ');
   } else if (typeof layer.classes === 'string') {
     classesStr = layer.classes;
+  }
+
+  // <a> with display:flex is block-level (full width) unlike <button> which
+  // shrink-wraps. Add w-fit to match button sizing unless width is explicit.
+  if (isButtonWithLink) {
+    const cls = Array.isArray(layer.classes) ? layer.classes : (layer.classes || '').split(' ');
+    const hasWidth = cls.some((c: string) => /^w-/.test(c.split(':').pop() || ''));
+    if (!hasWidth) {
+      classesStr = classesStr ? `${classesStr} w-fit` : 'w-fit';
+    }
   }
 
   // Build attributes
@@ -3342,6 +3360,8 @@ function layerToHtml(
   };
   if (layer.attributes) {
     for (const [key, value] of Object.entries(layer.attributes)) {
+      // Skip type attribute for buttons converted to <a>
+      if (isButtonWithLink && key === 'type') continue;
       if (value !== undefined && value !== null) {
         const htmlKey = jsxToHtmlAttrMap[key] || key;
         // Boolean HTML attributes should be rendered without a value
@@ -3352,6 +3372,79 @@ function layerToHtml(
         }
       }
     }
+  }
+
+  // For buttons rendered as <a>, resolve link href and add attributes directly
+  if (isButtonWithLink && buttonLinkSettings) {
+    let btnLinkHref = '';
+
+    switch (buttonLinkSettings.type) {
+      case 'url':
+        btnLinkHref = buttonLinkSettings.url?.data?.content || '';
+        break;
+      case 'email':
+        btnLinkHref = buttonLinkSettings.email?.data?.content ? `mailto:${buttonLinkSettings.email.data.content}` : '';
+        break;
+      case 'phone':
+        btnLinkHref = buttonLinkSettings.phone?.data?.content ? `tel:${buttonLinkSettings.phone.data.content}` : '';
+        break;
+      case 'page':
+        if (buttonLinkSettings.page?.id && pages && folders) {
+          const linkedPage = pages.find(p => p.id === buttonLinkSettings.page?.id);
+          if (linkedPage) {
+            btnLinkHref = buildLocalizedSlugPath(linkedPage, folders, 'page', locale, translations);
+          }
+        }
+        break;
+      case 'field': {
+        const fieldId = buttonLinkSettings.field?.data?.field_id;
+        const collLayerId = buttonLinkSettings.field?.data?.collection_layer_id;
+        let rawValue: string | undefined;
+        if (collLayerId && effectiveLayerDataMap?.[collLayerId]) {
+          rawValue = fieldId ? effectiveLayerDataMap[collLayerId][fieldId] : undefined;
+        } else {
+          rawValue = fieldId ? effectiveCollectionItemData?.[fieldId] : undefined;
+        }
+        if (fieldId && rawValue) {
+          const fieldType = buttonLinkSettings.field?.data?.field_type;
+          btnLinkHref = resolveFieldLinkValue({
+            fieldId,
+            rawValue,
+            fieldType,
+            context: {
+              pages: pages || [],
+              folders: folders || [],
+              collectionItemSlugs,
+              locale,
+              translations,
+              isPreview: false,
+            },
+            assetMap,
+          });
+        }
+        break;
+      }
+    }
+
+    if (buttonLinkSettings.anchor_layer_id) {
+      const anchorValue = anchorMap?.[buttonLinkSettings.anchor_layer_id] || buttonLinkSettings.anchor_layer_id;
+      btnLinkHref = btnLinkHref ? `${btnLinkHref}#${anchorValue}` : `#${anchorValue}`;
+    }
+
+    if (btnLinkHref) {
+      attrs.push(`href="${escapeHtml(btnLinkHref)}"`);
+      if (buttonLinkSettings.target) {
+        attrs.push(`target="${escapeHtml(buttonLinkSettings.target)}"`);
+      }
+      const btnLinkRel = buttonLinkSettings.rel || (buttonLinkSettings.target === '_blank' ? 'noopener noreferrer' : '');
+      if (btnLinkRel) {
+        attrs.push(`rel="${escapeHtml(btnLinkRel)}"`);
+      }
+      if (buttonLinkSettings.download) {
+        attrs.push('download');
+      }
+    }
+    attrs.push('role="button"');
   }
 
   // Render children

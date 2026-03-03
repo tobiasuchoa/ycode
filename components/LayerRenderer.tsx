@@ -582,6 +582,16 @@ const LayerItem: React.FC<{
     htmlTag = 'div';
   }
 
+  // Buttons with link settings render as <a> directly instead of being
+  // wrapped in <a><button></button></a> which is invalid HTML
+  const isButtonWithLink = layer.name === 'button'
+    && !isEditMode
+    && !isInsideForm
+    && isValidLinkSettings(layer.variables?.link);
+  if (isButtonWithLink) {
+    htmlTag = 'a';
+  }
+
   // Code Embed iframe ref and effect - must be at component level
   const htmlEmbedIframeRef = React.useRef<HTMLIFrameElement>(null);
   const filterLayerRef = React.useRef<HTMLDivElement>(null);
@@ -1286,6 +1296,14 @@ const LayerItem: React.FC<{
   // twMerge incorrectly removes leading-* when text-[...] is present
   // because it treats font-size as overriding line-height. Our own
   // setBreakpointClass already handles property-aware conflict resolution.
+
+  // <a> with display:flex is block-level (full width) unlike <button> which
+  // shrink-wraps. Add w-fit to match button sizing unless width is explicit.
+  const buttonNeedsFit = isButtonWithLink && (() => {
+    const cls = Array.isArray(layer.classes) ? layer.classes : (layer.classes || '').split(' ');
+    return !cls.some((c: string) => /^w-/.test(c.split(':').pop() || ''));
+  })();
+
   const fullClassName = isEditMode ? clsx(
     classesString,
     paragraphClasses,
@@ -1294,7 +1312,7 @@ const LayerItem: React.FC<{
     showProjection && 'outline outline-1 outline-dashed outline-blue-400 bg-blue-50/10',
     isLockedByOther && 'opacity-90 pointer-events-none select-none',
     'ycode-layer'
-  ) : clsx(classesString, paragraphClasses);
+  ) : clsx(classesString, paragraphClasses, buttonNeedsFit && 'w-fit');
 
   // Check if layer should be hidden (hide completely in both edit mode and public pages)
   if (layer.settings?.hidden) {
@@ -1476,6 +1494,37 @@ const LayerItem: React.FC<{
       'data-is-empty': isEmpty ? 'true' : 'false',
       ...(enableDragDrop && !isEditing && !isLockedByOther ? { ...normalizedAttributes, ...listeners } : normalizedAttributes),
     };
+
+    // When a button is rendered as <a>, apply link attributes directly
+    if (isButtonWithLink && layer.variables?.link) {
+      const btnLinkSettings = layer.variables.link;
+      const btnLinkContext: LinkResolutionContext = {
+        pages,
+        folders,
+        collectionItemSlugs,
+        collectionItemId: collectionLayerItemId,
+        pageCollectionItemId,
+        collectionItemData: collectionLayerData,
+        pageCollectionItemData: pageCollectionItemData || undefined,
+        isPreview,
+        locale: currentLocale,
+        translations,
+        getAsset,
+        anchorMap,
+        resolvedAssets,
+        layerDataMap: effectiveLayerDataMap,
+      };
+      const btnLinkHref = generateLinkHref(btnLinkSettings, btnLinkContext);
+      if (btnLinkHref) {
+        elementProps.href = btnLinkHref;
+        elementProps.target = btnLinkSettings.target || '_self';
+        const btnLinkRel = btnLinkSettings.rel || (btnLinkSettings.target === '_blank' ? 'noopener noreferrer' : undefined);
+        if (btnLinkRel) elementProps.rel = btnLinkRel;
+        if (btnLinkSettings.download) elementProps.download = btnLinkSettings.download;
+      }
+      elementProps.role = 'button';
+      delete elementProps.type;
+    }
 
     // Add data-gsap-hidden attribute for elements that should start hidden
     const hiddenInfo = hiddenLayerInfo?.find(info => info.layerId === layer.id);
@@ -2500,8 +2549,9 @@ const LayerItem: React.FC<{
 
   // Wrap with link if layer has link settings (published mode only)
   // In edit mode, links are not interactive to allow layer selection
+  // Skip for buttons — they render as <a> directly (see isButtonWithLink)
   const linkSettings = layer.variables?.link;
-  const shouldWrapWithLink = !isEditMode && isValidLinkSettings(linkSettings);
+  const shouldWrapWithLink = !isEditMode && !isButtonWithLink && isValidLinkSettings(linkSettings);
 
   if (shouldWrapWithLink && linkSettings) {
     // Build link context for layer-level link resolution
