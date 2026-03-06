@@ -27,17 +27,19 @@ import { useEditorStore } from '@/stores/useEditorStore';
 import { useLayerStylesStore } from '@/stores/useLayerStylesStore';
 import { useComponentsStore } from '@/stores/useComponentsStore';
 import { useCollectionsStore } from '@/stores/useCollectionsStore';
+import { usePagesStore } from '@/stores/usePagesStore';
 import { useCollaborationPresenceStore, getResourceLockKey, RESOURCE_TYPES } from '@/stores/useCollaborationPresenceStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 
 // 6. Utils/lib
 import { cn } from '@/lib/utils';
 import { flattenTree, type FlattenedItem } from '@/lib/tree-utilities';
-import { canHaveChildren, getLayerIcon, getLayerName, getCollectionVariable, canMoveLayer } from '@/lib/layer-utils';
+import { canHaveChildren, getLayerIcon, getLayerName, getCollectionVariable, canMoveLayer, updateLayerProps } from '@/lib/layer-utils';
 import { MULTI_ASSET_COLLECTION_ID } from '@/lib/collection-field-utils';
 import { hasStyleOverrides } from '@/lib/layer-style-utils';
 import { getUserInitials, getDisplayName } from '@/lib/collaboration-utils';
 import { getBreakpointPrefix } from '@/lib/breakpoint-utils';
+import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { CollaboratorBadge } from '@/components/collaboration/CollaboratorBadge';
 import { DropLineIndicator, DropContainerIndicator } from '@/components/DropIndicators';
@@ -85,6 +87,11 @@ function getLayerDisplayLabel(
   },
   breakpoint?: Breakpoint
 ): string {
+  // customName always takes priority (user-defined rename)
+  if (layer.customName) {
+    return layer.customName;
+  }
+
   // For text layers, try to show the actual text content
   if (layer.name === 'text' && layer.variables?.text) {
     const textVar = layer.variables.text as { type: string; data?: { content?: any } };
@@ -124,24 +131,27 @@ interface LayersTreeProps {
 interface LayerRowProps {
   node: FlattenedItem;
   isSelected: boolean;
-  isChildOfSelected: boolean; // New: indicates this is a child of selected parent
-  isLastVisibleDescendant: boolean; // New: last visible descendant of selected parent
-  hasVisibleChildren: boolean; // New: has visible children
-  canHaveChildren: boolean; // Pre-calculated from node.canHaveChildren
+  isChildOfSelected: boolean;
+  isLastVisibleDescendant: boolean;
+  hasVisibleChildren: boolean;
+  canHaveChildren: boolean;
   isOver: boolean;
   isDragging: boolean;
   isDragActive: boolean;
   dropPosition: 'above' | 'below' | 'inside' | null;
-  highlightedDepths: Set<number>; // Depths that should be highlighted
+  highlightedDepths: Set<number>;
   onSelect: (id: string) => void;
   onMultiSelect: (id: string, modifiers: { meta: boolean; shift: boolean }) => void;
   onToggle: (id: string) => void;
   pageId: string;
-  selectedLayerId: string | null; // Added for context menu
+  selectedLayerId: string | null;
   liveLayerUpdates?: UseLiveLayerUpdatesReturn | null;
   liveComponentUpdates?: UseLiveComponentUpdatesReturn | null;
-  scrollToSelected?: boolean; // New: trigger scroll when selected
-  activeBreakpoint: Breakpoint; // For breakpoint-aware icons and names
+  scrollToSelected?: boolean;
+  activeBreakpoint: Breakpoint;
+  isRenaming: boolean;
+  onRenameStart: (id: string) => void;
+  onRenameConfirm: (id: string, newName: string | null) => void;
 }
 
 // Helper to check if a node is a descendant of another
@@ -181,6 +191,9 @@ const LayerRow = React.memo(function LayerRow({
   liveComponentUpdates,
   scrollToSelected,
   activeBreakpoint,
+  isRenaming,
+  onRenameStart,
+  onRenameConfirm,
 }: LayerRowProps) {
   const getStyleById = useLayerStylesStore((state) => state.getStyleById);
   const getComponentById = useComponentsStore((state) => state.getComponentById);
@@ -200,10 +213,36 @@ const LayerRow = React.memo(function LayerRow({
 
   const { attributes, listeners, setNodeRef: setDragRef } = useDraggable({
     id: node.id,
+    disabled: isRenaming,
   });
 
   // Ref for scrolling to this element
   const rowRef = React.useRef<HTMLDivElement>(null);
+  const renameInputRef = React.useRef<HTMLInputElement>(null);
+  const renameReadyRef = React.useRef(false);
+
+  // Focus input when rename mode activates
+  React.useEffect(() => {
+    if (isRenaming) {
+      renameReadyRef.current = false;
+      const tryFocus = () => {
+        if (renameInputRef.current && document.activeElement !== renameInputRef.current) {
+          renameInputRef.current.focus();
+          const len = renameInputRef.current.value.length;
+          renameInputRef.current.setSelectionRange(len, len);
+        }
+        if (document.activeElement === renameInputRef.current) {
+          renameReadyRef.current = true;
+        }
+      };
+      tryFocus();
+      const t1 = setTimeout(tryFocus, 50);
+      const t2 = setTimeout(tryFocus, 150);
+      return () => { clearTimeout(t1); clearTimeout(t2); renameReadyRef.current = false; };
+    } else {
+      renameReadyRef.current = false;
+    }
+  }, [isRenaming]);
 
   // Combine refs for drag and drop
   const setRefs = (element: HTMLDivElement | null) => {
@@ -314,8 +353,8 @@ const LayerRow = React.memo(function LayerRow({
         {/* Main Row */}
         <div
           ref={setRefs}
-          {...attributes}
-          {...listeners}
+          {...(isRenaming ? {} : attributes)}
+          {...(isRenaming ? {} : listeners)}
           data-drag-active={isDragActive}
           data-layer-id={node.id}
           className={cn(
@@ -352,6 +391,7 @@ const LayerRow = React.memo(function LayerRow({
             setHoveredLayerId(null);
           }}
           onClick={(e) => {
+            if (isRenaming) return;
             // Block click if layer is locked by another user
             if (isLockedByOther) {
               e.stopPropagation();
@@ -410,14 +450,54 @@ const LayerRow = React.memo(function LayerRow({
             />
           )}
 
-          {/* Label (breakpoint-aware for layout layers, text content for text layers) */}
-          <span className="grow text-xs font-medium overflow-hidden text-ellipsis whitespace-nowrap pointer-events-none">
-            {getLayerDisplayLabel(node.layer, {
-              component_name: appliedComponent?.name,
-              collection_name: finalCollectionName,
-              source_field_name: sourceFieldName ?? undefined,
-            }, activeBreakpoint)}
-          </span>
+          {/* Label / Inline Rename Input */}
+          {isRenaming ? (
+            <Input
+              ref={renameInputRef}
+              variant="rename-selected"
+              data-renaming
+              className="grow mr-2"
+              defaultValue={node.layer.customName || ''}
+              placeholder={getLayerDisplayLabel({ ...node.layer, customName: undefined }, {
+                component_name: appliedComponent?.name,
+                collection_name: finalCollectionName,
+                source_field_name: sourceFieldName ?? undefined,
+              }, activeBreakpoint)}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              onBlur={(e) => {
+                if (!renameReadyRef.current) return;
+                const val = e.currentTarget.value.trim();
+                onRenameConfirm(node.id, val || null);
+              }}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === 'Enter') {
+                  const val = (e.target as HTMLInputElement).value.trim();
+                  onRenameConfirm(node.id, val || null);
+                } else if (e.key === 'Escape') {
+                  onRenameConfirm(node.id, node.layer.customName || null);
+                }
+              }}
+            />
+          ) : (
+            <span
+              className="grow text-xs font-medium overflow-hidden text-ellipsis whitespace-nowrap select-none"
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                if (node.id !== 'body') {
+                  onRenameStart(node.id);
+                }
+              }}
+            >
+              {getLayerDisplayLabel(node.layer, {
+                component_name: appliedComponent?.name,
+                collection_name: finalCollectionName,
+                source_field_name: sourceFieldName ?? undefined,
+              }, activeBreakpoint)}
+            </span>
+          )}
 
           {/* Lock Indicator - show when layer is locked by another user */}
           {isLockedByOther && (
@@ -715,6 +795,31 @@ export default function LayersTree({
       : undefined;
     return { collection_name: collectionName, source_field_name: sourceFieldName };
   }, [activeNode, collections, fieldsByCollectionId]);
+
+  // Inline rename handlers
+  const renamingLayerId = useEditorStore((state) => state.renamingLayerId);
+  const setRenamingLayerId = useEditorStore((state) => state.setRenamingLayerId);
+  const updateLayer = usePagesStore((state) => state.updateLayer);
+  const updateComponentDraft = useComponentsStore((state) => state.updateComponentDraft);
+
+  const handleRenameStart = useCallback((id: string) => {
+    setRenamingLayerId(id);
+  }, [setRenamingLayerId]);
+
+  const handleRenameConfirm = useCallback((id: string, newName: string | null) => {
+    const value = newName || undefined;
+
+    // Update layer first so the label shows the new name immediately
+    if (editingComponentId) {
+      const { componentDrafts } = useComponentsStore.getState();
+      const compLayers = componentDrafts[editingComponentId] || [];
+      updateComponentDraft(editingComponentId, updateLayerProps(compLayers, id, { customName: value }));
+    } else {
+      updateLayer(pageId, id, { customName: value });
+    }
+
+    setRenamingLayerId(null);
+  }, [editingComponentId, pageId, updateLayer, updateComponentDraft, setRenamingLayerId]);
 
   // Configure sensors for drag detection
   const sensors = useSensors(
@@ -1522,6 +1627,9 @@ export default function LayersTree({
               liveComponentUpdates={liveComponentUpdates}
               scrollToSelected={shouldScrollToSelected}
               activeBreakpoint={activeBreakpoint}
+              isRenaming={renamingLayerId === node.id}
+              onRenameStart={handleRenameStart}
+              onRenameConfirm={handleRenameConfirm}
             />
           );
         })}

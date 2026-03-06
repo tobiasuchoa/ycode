@@ -75,6 +75,8 @@ interface EditorActions {
   openCollectionItemSheet: (collectionId: string, itemId: string) => void;
   closeCollectionItemSheet: () => void;
   setHoveredLayerId: (id: string | null) => void;
+  renamingLayerId: string | null;
+  setRenamingLayerId: (id: string | null) => void;
   setPreviewMode: (enabled: boolean) => void;
   setActiveSidebarTab: (tab: EditorSidebarTab) => void;
   setLastDesignUrl: (url: string | null) => void;
@@ -194,6 +196,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   activeTextStyleKey: null,
   collectionItemSheet: null,
   hoveredLayerId: null,
+  renamingLayerId: null,
   isPreviewMode: false,
   activeSidebarTab: 'layers' as EditorSidebarTab,
   lastDesignUrl: null,
@@ -482,6 +485,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   }),
 
   setHoveredLayerId: (id) => set({ hoveredLayerId: id }),
+  setRenamingLayerId: (id) => set({ renamingLayerId: id }),
 
   setPreviewMode: (enabled) => set({ isPreviewMode: enabled }),
 

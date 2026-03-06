@@ -1128,8 +1128,8 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
           return;
         }
 
-        // Escape - Select parent layer
-        if (e.key === 'Escape' && (currentPageId || editingComponentId) && selectedLayerId) {
+        // Escape - Select parent layer (skip if a dialog is open)
+        if (e.key === 'Escape' && !document.querySelector('[role="dialog"]') && (currentPageId || editingComponentId) && selectedLayerId) {
           e.preventDefault();
 
           const layers = getCurrentLayers();
@@ -1279,10 +1279,10 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
         if ((e.metaKey || e.ctrlKey) && e.key === 'c') {
           if (!isInputFocused && (currentPageId || editingComponentId)) {
             e.preventDefault();
-            
+
             // Get layers from the correct context
             const layers = getCurrentLayers();
-            
+
             if (selectedLayerIds.length > 1) {
               // Multi-select: copy all (check restrictions)
               const layersToCheck = selectedLayerIds.map(id => findLayerById(layers, id)).filter(Boolean) as Layer[];
@@ -1324,10 +1324,10 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
         if ((e.metaKey || e.ctrlKey) && e.key === 'x') {
           if (!isInputFocused && (currentPageId || editingComponentId)) {
             e.preventDefault();
-            
+
             // Get layers from the correct context
             const layers = getCurrentLayers();
-            
+
             if (selectedLayerIds.length > 1) {
               // Multi-select: cut all (check restrictions)
               const layersToCheck = selectedLayerIds.map(id => findLayerById(layers, id)).filter(Boolean) as Layer[];
@@ -1404,7 +1404,7 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
                   toast.error('Infinite component loop detected', { description: circularError });
                   return;
                 }
-                
+
                 const layers = getCurrentLayers();
                 const newLayer = regenerateIdsWithInteractionRemapping(cloneDeep(clipboardLayer));
                 const result = findParentAndIndex(layers, selectedLayerId);
@@ -1445,6 +1445,13 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
               }
             }
           }
+        }
+
+        // F2 - Rename selected layer
+        if (e.key === 'F2' && !isInputFocused && (currentPageId || editingComponentId) && selectedLayerId && selectedLayerId !== 'body') {
+          e.preventDefault();
+          useEditorStore.getState().setRenamingLayerId(selectedLayerId);
+          return;
         }
 
         // Delete: Delete or Backspace (supports multi-select)

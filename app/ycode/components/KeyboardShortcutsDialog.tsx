@@ -43,6 +43,7 @@ const shortcutCategories: { left: ShortcutCategory[]; right: ShortcutCategory[] 
         { name: 'Redo', keys: [{ name: '⇧' }, { name: '⌘' }, { name: 'Z' }] },
         { name: 'Copy style', keys: [{ name: '⌥' }, { name: '⌘' }, { name: 'C' }] },
         { name: 'Paste style', keys: [{ name: '⌥' }, { name: '⌘' }, { name: 'V' }] },
+        { name: 'Rename', keys: [{ name: 'F2' }] },
         { name: 'Delete', keys: [{ name: '⌫' }] },
         { name: 'Select parent', keys: [{ name: 'Esc' }] },
       ],
