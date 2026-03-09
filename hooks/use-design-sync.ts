@@ -361,9 +361,10 @@ export function useDesignSync({
       }
 
       // Parse the inherited class to extract the actual value
-      const arbitraryMatch = inheritedClass.match(/\[([^\]]+)\]/);
+      // Also capture Tailwind opacity modifier (e.g., text-[#0073ff]/23 → #0073ff/23)
+      const arbitraryMatch = inheritedClass.match(/\[([^\]]+)\](?:\/(\d+))?/);
       if (arbitraryMatch) {
-        return arbitraryMatch[1];
+        return arbitraryMatch[2] ? `${arbitraryMatch[1]}/${arbitraryMatch[2]}` : arbitraryMatch[1];
       }
 
       // CSS variable reference for background-image

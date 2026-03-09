@@ -1473,11 +1473,9 @@ export default function ColorPicker({
       <PopoverTrigger asChild>
       {hasValue ? (
         <div className="flex items-center justify-start h-8 rounded-lg bg-input hover:bg-input/60 px-2.5 cursor-pointer">
-          <div
-            className={cn('size-4 rounded shrink-0 mr-2', isTransparent && 'relative overflow-hidden')}
-            style={isTransparent ? undefined : { background: displayValue }}
-          >
-            {isTransparent && <div className="absolute inset-0 opacity-30 bg-checkerboard" />}
+          <div className={cn('size-5 rounded-[6px] shrink-0 mr-2 -ml-1 relative overflow-hidden outline dark:outline-white/10 outline-offset-[-1px]', isTransparent && 'overflow-hidden')}>
+            <div className="absolute inset-0 z-20" style={isTransparent ? undefined : { background: isGradient ? displayValue : `rgba(${Math.round(rgbaColor.r)},${Math.round(rgbaColor.g)},${Math.round(rgbaColor.b)},${rgbaColor.a})` }} />
+            <div className="absolute inset-0 opacity-15 bg-checkerboard bg-background z-10" />
           </div>
           <Label variant="muted" className="truncate max-w-30 cursor-pointer">
             {getDisplayText(displayValue, rgbaColor.a)}
@@ -1493,9 +1491,14 @@ export default function ColorPicker({
           </div>
         </div>
       ) : (
-          <Button variant="input" size="sm">
-            <Icon name="plus" />
-            Add
+          <Button
+            variant="input" size="sm"
+            className="justify-start"
+          >
+            <div className="size-5 rounded-[6px] shrink-0 -ml-1 relative overflow-hidden outline outline-current/10 outline-offset-[-1px]">
+              <div className="absolute inset-0 opacity-15 bg-checkerboard bg-background z-10" />
+            </div>
+            <span className="dark:opacity-50">Add...</span>
           </Button>
       )}
       </PopoverTrigger>

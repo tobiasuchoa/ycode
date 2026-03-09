@@ -433,7 +433,15 @@ export default function EffectControls({ layer, onLayerUpdate, activeTextStyleKe
 
                   <Popover open={popoverOpen} onOpenChange={handleOpenPopover}>
                     <PopoverTrigger asChild>
-                      <Button variant="secondary" size="sm">Add</Button>
+                      <Button
+                        variant="input" size="sm"
+                        className="justify-start"
+                      >
+                        <div className="size-5 rounded-[6px] shrink-0 -ml-1 relative overflow-hidden outline outline-current/10 outline-offset-[-1px]">
+                          <div className="absolute inset-0 opacity-15 bg-checkerboard bg-background z-10" />
+                        </div>
+                        <span className="dark:opacity-50">Add...</span>
+                      </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-56 my-0.5 flex flex-col gap-2" align="end">
                       {editingShadow && (
