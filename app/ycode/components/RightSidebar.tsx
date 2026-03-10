@@ -91,6 +91,7 @@ import { createTextComponentVariableValue } from '@/lib/variable-utils';
 import { getRichTextValue } from '@/lib/tiptap-utils';
 import { DEFAULT_TEXT_STYLES, getTextStyle } from '@/lib/text-format-utils';
 import { buildFieldGroupsForLayer, getFieldIcon, isMultipleAssetField, MULTI_ASSET_COLLECTION_ID } from '@/lib/collection-field-utils';
+import { getInverseReferenceFields } from '@/lib/collection-utils';
 
 // 7. Types
 import type { Layer, FieldVariable, CollectionField, CollectionVariable, ComponentVariable } from '@/types';
@@ -909,14 +910,14 @@ const RightSidebar = React.memo(function RightSidebar({
     });
   }, [selectedLayerId, selectedLayer, handleLayerUpdate]);
 
-  // Handle reference field selection (for reference, multi-reference, or multi-asset as collection source)
+  // Handle reference field selection (for reference, multi-reference, inverse, or multi-asset as collection source)
   // Also resets child bindings when source changes
-  const handleReferenceFieldChange = (fieldId: string) => {
+  const handleReferenceFieldChange = (value: string) => {
     if (!selectedLayerId || !selectedLayer) return;
 
     const currentCollectionVariable = getCollectionVariable(selectedLayer);
 
-    if (fieldId === 'none') {
+    if (value === 'none') {
       // Clear the collection source
       handleLayerUpdate(selectedLayerId, {
         variables: {
@@ -924,9 +925,24 @@ const RightSidebar = React.memo(function RightSidebar({
           collection: { id: '', source_field_id: undefined, source_field_type: undefined, source_field_source: undefined }
         }
       });
+    } else if (value.startsWith('inverse:')) {
+      // Inverse reference: "inverse:{fieldId}:{collectionId}"
+      const [, fieldId, collectionId] = value.split(':');
+      handleLayerUpdate(selectedLayerId, {
+        variables: {
+          ...selectedLayer?.variables,
+          collection: {
+            ...currentCollectionVariable,
+            id: collectionId,
+            source_field_id: fieldId,
+            source_field_type: 'inverse_reference',
+            source_field_source: undefined,
+          }
+        }
+      });
     } else {
       // Find the selected field to get its reference_collection_id and type
-      const selectedField = parentCollectionFields.find(f => f.id === fieldId);
+      const selectedField = parentCollectionFields.find(f => f.id === value);
 
       if (selectedField && isMultipleAssetField(selectedField)) {
         handleLayerUpdate(selectedLayerId, {
@@ -935,7 +951,7 @@ const RightSidebar = React.memo(function RightSidebar({
             collection: {
               ...currentCollectionVariable,
               id: MULTI_ASSET_COLLECTION_ID,
-              source_field_id: fieldId,
+              source_field_id: value,
               source_field_type: 'multi_asset',
               source_field_source: 'collection',
             }
@@ -948,7 +964,7 @@ const RightSidebar = React.memo(function RightSidebar({
             collection: {
               ...currentCollectionVariable,
               id: selectedField.reference_collection_id,
-              source_field_id: fieldId,
+              source_field_id: value,
               source_field_type: selectedField.type as 'reference' | 'multi_reference',
               source_field_source: undefined,
             }
@@ -1014,6 +1030,16 @@ const RightSidebar = React.memo(function RightSidebar({
           source_field_source: undefined,
         };
       }
+    } else if (value.startsWith('inverse:')) {
+      // Inverse reference: "inverse:{fieldId}:{collectionId}"
+      const [, fieldId, collectionId] = value.split(':');
+      newCollectionVar = {
+        ...currentCollectionVariable,
+        id: collectionId,
+        source_field_id: fieldId,
+        source_field_type: 'inverse_reference',
+        source_field_source: undefined,
+      };
     } else if (value.startsWith('collection:')) {
       const collectionId = value.replace('collection:', '');
       newCollectionVar = {
@@ -1067,6 +1093,9 @@ const RightSidebar = React.memo(function RightSidebar({
     if (collectionVariable.source_field_id) {
       if (collectionVariable.source_field_type === 'multi_asset') {
         return `multi_asset:${collectionVariable.source_field_id}`;
+      }
+      if (collectionVariable.source_field_type === 'inverse_reference') {
+        return `inverse:${collectionVariable.source_field_id}:${collectionVariable.id}`;
       }
       return `field:${collectionVariable.source_field_id}`;
     }
@@ -1621,6 +1650,28 @@ const RightSidebar = React.memo(function RightSidebar({
     return collectionFields.filter(f => isMultipleAssetField(f));
   }, [currentPage, fields]);
 
+  // Inverse reference fields: fields in OTHER collections that reference the parent collection
+  // E.g., if parent is "Authors" and "Books" has a reference field "author" → Authors,
+  // show "Books (via author)" as a connected relation source option
+  const parentInverseReferenceFields = useMemo(() => {
+    const collectionVariable = parentCollectionLayer ? getCollectionVariable(parentCollectionLayer) : null;
+    let collectionId = collectionVariable?.id;
+    if (collectionId === MULTI_ASSET_COLLECTION_ID) collectionId = undefined;
+    if (!collectionId && currentPage?.is_dynamic) {
+      collectionId = currentPage.settings?.cms?.collection_id || undefined;
+    }
+    if (!collectionId) return [];
+    return getInverseReferenceFields(collectionId, fields, collections);
+  }, [parentCollectionLayer, fields, collections, currentPage]);
+
+  // Inverse reference fields for dynamic page context (top-level collection layers on dynamic pages)
+  const dynamicPageInverseReferenceFields = useMemo(() => {
+    if (!currentPage?.is_dynamic) return [];
+    const collectionId = currentPage.settings?.cms?.collection_id;
+    if (!collectionId) return [];
+    return getInverseReferenceFields(collectionId, fields, collections);
+  }, [currentPage, fields, collections]);
+
   // Handle adding custom attribute
   const handleAddAttribute = () => {
     if (selectedLayerId && newAttributeName.trim()) {
@@ -2127,10 +2178,17 @@ const RightSidebar = React.memo(function RightSidebar({
                   <div className="grid grid-cols-3">
                     <Label variant="muted">Source</Label>
                     <div className="col-span-2 *:w-full">
-                      {/* When inside a parent collection, show reference fields and multi-asset fields as source options */}
+                      {/* When inside a parent collection, show reference fields, multi-asset fields, and inverse reference fields as source options */}
                       {parentCollectionLayer ? (
                         <Select
-                          value={getCollectionVariable(selectedLayer)?.source_field_id || 'none'}
+                          value={(() => {
+                            const cv = getCollectionVariable(selectedLayer);
+                            if (!cv?.source_field_id) return 'none';
+                            if (cv.source_field_type === 'inverse_reference') {
+                              return `inverse:${cv.source_field_id}:${cv.id}`;
+                            }
+                            return cv.source_field_id;
+                          })()}
                           onValueChange={handleReferenceFieldChange}
                         >
                           <SelectTrigger>
@@ -2166,6 +2224,22 @@ const RightSidebar = React.memo(function RightSidebar({
                                     <span className="flex items-center gap-2">
                                       <Icon name={getFieldIcon(field.type)} className="size-3 text-muted-foreground shrink-0" />
                                       {field.name}
+                                    </span>
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                            )}
+                            {parentInverseReferenceFields.length > 0 && (
+                              <SelectGroup>
+                                <SelectLabel>Connected relations</SelectLabel>
+                                {parentInverseReferenceFields.map(({ field, collection }) => (
+                                  <SelectItem
+                                    key={`inverse-${field.id}`}
+                                    value={`inverse:${field.id}:${field.collection_id}`}
+                                  >
+                                    <span className="flex items-center gap-2">
+                                      <Icon name="database" className="size-3 text-muted-foreground shrink-0" />
+                                      {collection.name} (via {field.name})
                                     </span>
                                   </SelectItem>
                                 ))}
@@ -2212,6 +2286,22 @@ const RightSidebar = React.memo(function RightSidebar({
                                     <span className="flex items-center gap-2">
                                       <Icon name={getFieldIcon(field.type)} className="size-3 text-muted-foreground shrink-0" />
                                       {field.name}
+                                    </span>
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                            )}
+                            {dynamicPageInverseReferenceFields.length > 0 && (
+                              <SelectGroup>
+                                <SelectLabel>Connected relations</SelectLabel>
+                                {dynamicPageInverseReferenceFields.map(({ field, collection }) => (
+                                  <SelectItem
+                                    key={`inverse-${field.id}`}
+                                    value={`inverse:${field.id}:${field.collection_id}`}
+                                  >
+                                    <span className="flex items-center gap-2">
+                                      <Icon name="database" className="size-3 text-muted-foreground shrink-0" />
+                                      {collection.name} (via {field.name})
                                     </span>
                                   </SelectItem>
                                 ))}

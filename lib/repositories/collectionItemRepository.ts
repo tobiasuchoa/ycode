@@ -483,6 +483,60 @@ export async function getItemWithValues(id: string, is_published: boolean = fals
 }
 
 /**
+ * Find item IDs in a collection where a specific field value matches a target value.
+ * Used for inverse reference resolution: given a parent item ID, find all items
+ * in the child collection whose reference field points to that parent.
+ * Handles both single reference (exact match) and multi_reference (JSON array contains).
+ */
+export async function getItemIdsByFieldValue(
+  collectionId: string,
+  fieldId: string,
+  targetValue: string,
+  isPublished: boolean = false
+): Promise<string[]> {
+  const client = await getSupabaseAdmin();
+
+  if (!client) {
+    throw new Error('Supabase client not configured');
+  }
+
+  // Find item IDs where the field value matches (single reference = exact, multi_reference = contains)
+  // For single reference: value = targetValue (exact match)
+  // For multi_reference: value is a JSON string like '["uuid1","uuid2"]' containing targetValue
+  // We query for both patterns using OR with LIKE for JSON array containment
+  const { data, error } = await client
+    .from('collection_item_values')
+    .select('item_id')
+    .eq('field_id', fieldId)
+    .eq('is_published', isPublished)
+    .is('deleted_at', null)
+    .or(`value.eq.${targetValue},value.like.%"${targetValue}"%`);
+
+  if (error) {
+    throw new Error(`Failed to query inverse references: ${error.message}`);
+  }
+
+  if (!data || data.length === 0) return [];
+
+  // Get unique item IDs that also belong to the target collection and are not deleted
+  const candidateIds = [...new Set(data.map(v => v.item_id))];
+
+  const { data: validItems, error: itemError } = await client
+    .from('collection_items')
+    .select('id')
+    .eq('collection_id', collectionId)
+    .eq('is_published', isPublished)
+    .is('deleted_at', null)
+    .in('id', candidateIds);
+
+  if (itemError) {
+    throw new Error(`Failed to validate inverse reference items: ${itemError.message}`);
+  }
+
+  return validItems?.map(i => i.id) || [];
+}
+
+/**
  * Get multiple items with their values
  * @param collection_id - Collection UUID
  * @param is_published - Filter for draft (false) or published (true) items and values. Defaults to false (draft).

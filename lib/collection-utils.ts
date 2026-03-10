@@ -225,6 +225,45 @@ export function isValidCollectionName(collectionName: string): boolean {
 }
 
 /**
+ * Inverse reference field descriptor for UI and data resolution
+ */
+export interface InverseReferenceField {
+  field: import('@/types').CollectionField;
+  collection: import('@/types').Collection;
+}
+
+/**
+ * Find fields in other collections that reference a given collection (inverse references).
+ * E.g., if "Books" has a reference field "author" pointing to "Authors",
+ * calling this with the Authors collection ID returns the "author" field from Books.
+ */
+export function getInverseReferenceFields(
+  targetCollectionId: string,
+  allFields: Record<string, import('@/types').CollectionField[]>,
+  allCollections: import('@/types').Collection[]
+): InverseReferenceField[] {
+  const result: InverseReferenceField[] = [];
+  const collectionsMap = new Map(allCollections.map(c => [c.id, c]));
+
+  for (const [collectionId, fields] of Object.entries(allFields)) {
+    if (collectionId === targetCollectionId) continue;
+    const collection = collectionsMap.get(collectionId);
+    if (!collection) continue;
+
+    for (const field of fields) {
+      if (
+        (field.type === 'reference' || field.type === 'multi_reference') &&
+        field.reference_collection_id === targetCollectionId
+      ) {
+        result.push({ field, collection });
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
  * Resolve reference fields synchronously using pre-loaded store data
  * Adds resolved relationship paths (e.g., "refFieldId.targetFieldId") to item values
  * @param itemValues - The item's field values

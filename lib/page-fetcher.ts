@@ -1,7 +1,7 @@
 import { cache } from 'react';
 import { getSupabaseAdmin } from '@/lib/supabase-server';
 import { buildSlugPath, buildDynamicPageUrl, buildLocalizedSlugPath, buildLocalizedDynamicPageUrl, detectLocaleFromPath, matchPageWithTranslatedSlugs, matchDynamicPageWithTranslatedSlugs } from '@/lib/page-utils';
-import { getItemWithValues, getItemsWithValues } from '@/lib/repositories/collectionItemRepository';
+import { getItemWithValues, getItemsWithValues, getItemIdsByFieldValue } from '@/lib/repositories/collectionItemRepository';
 import { getFieldsByCollectionId } from '@/lib/repositories/collectionFieldRepository';
 import type { Page, PageFolder, PageLayers, Component, ComponentVariable, CollectionItemWithValues, CollectionField, Layer, CollectionPaginationMeta, Translation, Locale } from '@/types';
 import { getCollectionVariable, resolveFieldValue, evaluateVisibility, getLayerHtmlTag, filterDisabledSliderLayers } from '@/lib/layer-utils';
@@ -448,8 +448,9 @@ export const fetchPageByPath = cache(async function fetchPageByPath(
             // Then resolve collection layers (nested collections will handle their own injection)
             // The isPublished parameter controls which collection items to fetch
             // Pass enhanced values so nested collections can filter based on dynamic page data
+            // Pass collectionItem.id so inverse reference layers can query by parent item
             let resolvedLayers = layersWithInjectedData.length > 0
-              ? await resolveCollectionLayers(layersWithInjectedData, isPublished, enhancedItemValues, paginationContext, translations)
+              ? await resolveCollectionLayers(layersWithInjectedData, isPublished, enhancedItemValues, paginationContext, translations, collectionItem.id)
               : [];
 
             // Resolve collections inside rich text embedded components
@@ -1528,7 +1529,8 @@ export async function resolveCollectionLayers(
   isPublished: boolean,
   parentItemValues?: Record<string, string>,
   paginationContext?: PaginationContext,
-  translations?: Record<string, Translation>
+  translations?: Record<string, Translation>,
+  parentCollectionItemId?: string
 ): Promise<Layer[]> {
   // Fetch timezone setting for date formatting
   const timezone = (await getSettingByKey('timezone') as string | null) || 'UTC';
@@ -1536,7 +1538,8 @@ export async function resolveCollectionLayers(
   const resolveLayer = async (
     layer: Layer,
     itemValues?: Record<string, string>,
-    parentLayerDataMap?: Record<string, Record<string, string>>
+    parentLayerDataMap?: Record<string, Record<string, string>>,
+    parentItemId?: string
   ): Promise<Layer> => {
     // Merge parent's layer data map with layer's own map
     const layerDataMap = { ...parentLayerDataMap, ...(layer._layerDataMap || {}) };
@@ -1666,7 +1669,16 @@ export async function resolveCollectionLayers(
           // For reference/multi-reference fields, get allowed item IDs BEFORE fetching
           // This ensures pagination counts and offsets are correct for the filtered set
           let allowedItemIds: string[] | undefined;
-          if (sourceFieldId && itemValues) {
+          if (sourceFieldType === 'inverse_reference' && sourceFieldId && parentItemId) {
+            // Inverse reference: find items in this collection where the reference field
+            // points back to the parent item (the field is on THIS collection, not the parent)
+            allowedItemIds = await getItemIdsByFieldValue(
+              collectionVariable.id,
+              sourceFieldId,
+              parentItemId,
+              isPublished
+            );
+          } else if (sourceFieldId && itemValues) {
             const refValue = itemValues[sourceFieldId];
             if (refValue) {
               if (sourceFieldType === 'reference') {
@@ -1776,8 +1788,9 @@ export async function resolveCollectionLayers(
 
               // Resolve children for THIS specific item's values
               // This ensures nested collection layers filter based on this item's reference fields
+              // Pass item.id so inverse reference children can query by parent item ID
               const resolvedChildren = layer.children?.length
-                ? await Promise.all(layer.children.map(child => resolveLayer(child, enhancedValues, updatedLayerDataMap)))
+                ? await Promise.all(layer.children.map(child => resolveLayer(child, enhancedValues, updatedLayerDataMap, item.id)))
                 : [];
 
               // Then inject field data into the resolved children
@@ -1878,7 +1891,7 @@ export async function resolveCollectionLayers(
           console.error(`Failed to resolve collection layer ${layer.id}:`, error);
           return {
             ...layer,
-            children: layer.children ? await Promise.all(layer.children.map(child => resolveLayer(child, itemValues, layerDataMap))) : undefined,
+            children: layer.children ? await Promise.all(layer.children.map(child => resolveLayer(child, itemValues, layerDataMap, parentItemId))) : undefined,
           };
         }
       }
@@ -1949,14 +1962,14 @@ export async function resolveCollectionLayers(
     if (layer.children) {
       return {
         ...layer,
-        children: await Promise.all(layer.children.map(child => resolveLayer(child, itemValues, layerDataMap))),
+        children: await Promise.all(layer.children.map(child => resolveLayer(child, itemValues, layerDataMap, parentItemId))),
       };
     }
 
     return layer;
   };
 
-  const result = await Promise.all(layers.map(layer => resolveLayer(layer, parentItemValues, undefined)));
+  const result = await Promise.all(layers.map(layer => resolveLayer(layer, parentItemValues, undefined, parentCollectionItemId)));
 
   // Collect pagination metadata from all fragments
   const paginationMetaMap: Record<string, CollectionPaginationMeta> = {};
@@ -2396,7 +2409,8 @@ export async function renderCollectionItemsToHtml(
         isPublished,
         item.values, // Parent item values for multi-reference filtering
         undefined, // No pagination context for Load More rendering
-        undefined // TODO: Add translation support for Load More pagination
+        undefined, // TODO: Add translation support for Load More pagination
+        item.id // Parent item ID for inverse reference resolution
       );
 
       // Resolve all AssetVariables to URLs server-side

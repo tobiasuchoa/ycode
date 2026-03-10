@@ -108,6 +108,7 @@ interface CanvasContentProps {
   selectedLayerId: string | null;
   hoveredLayerId: string | null;
   pageId: string;
+  pageCollectionItemId?: string;
   pageCollectionItemData: Record<string, string> | null;
   onLayerClick: (layerId: string, event?: React.MouseEvent) => void;
   onLayerUpdate?: (layerId: string, updates: Partial<Layer>) => void;
@@ -125,6 +126,7 @@ function CanvasContent({
   selectedLayerId,
   hoveredLayerId,
   pageId,
+  pageCollectionItemId,
   pageCollectionItemData,
   onLayerClick,
   onLayerUpdate,
@@ -209,6 +211,7 @@ function CanvasContent({
         onLayerUpdate={onLayerUpdate}
         onLayerHover={onLayerHover}
         pageId={pageId}
+        pageCollectionItemId={pageCollectionItemId}
         pageCollectionItemData={pageCollectionItemData}
         liveLayerUpdates={liveLayerUpdates}
         liveComponentUpdates={liveComponentUpdates}
@@ -426,6 +429,7 @@ export default function Canvas({
         selectedLayerId={selectedLayerId}
         hoveredLayerId={effectiveHoveredLayerId}
         pageId={pageId}
+        pageCollectionItemId={pageCollectionItem?.id}
         pageCollectionItemData={pageCollectionItem?.values || null}
         onLayerClick={handleLayerClick}
         onLayerUpdate={onLayerUpdate}

@@ -1099,6 +1099,19 @@ const LayerItem: React.FC<{
           values: virtualValues,
         };
       });
+    } else if (sourceFieldType === 'inverse_reference' && sourceFieldId) {
+      // Inverse reference: filter items whose reference field value matches the parent item ID
+      const parentId = collectionLayerItemId || pageCollectionItemId;
+      if (!parentId) return [];
+      items = allCollectionItems.filter(item => {
+        const fieldValue = item.values[sourceFieldId];
+        if (!fieldValue) return false;
+        // Single reference: exact match
+        if (fieldValue === parentId) return true;
+        // Multi-reference: check if JSON array contains the parent ID
+        const ids = parseMultiReferenceValue(fieldValue);
+        return ids.includes(parentId);
+      });
     } else if (!sourceFieldId) {
       items = allCollectionItems;
     } else {
@@ -1146,7 +1159,7 @@ const LayerItem: React.FC<{
     }
 
     return items;
-  }, [allCollectionItems, sourceFieldId, sourceFieldType, sourceFieldSource, collectionLayerData, pageCollectionItemData, getAsset, collectionVariable?.filters]);
+  }, [allCollectionItems, sourceFieldId, sourceFieldType, sourceFieldSource, collectionLayerData, pageCollectionItemData, collectionLayerItemId, pageCollectionItemId, getAsset, collectionVariable?.filters]);
 
   useEffect(() => {
     if (!isEditMode) return;
