@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, memo } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -32,7 +32,7 @@ interface EffectControlsProps {
   activeTextStyleKey?: string | null;
 }
 
-export default function EffectControls({ layer, onLayerUpdate, activeTextStyleKey }: EffectControlsProps) {
+const EffectControls = memo(function EffectControls({ layer, onLayerUpdate, activeTextStyleKey }: EffectControlsProps) {
   const { activeBreakpoint, activeUIState } = useEditorStore();
   const showTextStyleControls = useEditorStore((state) => state.showTextStyleControls());
   const { updateDesignProperty, debouncedUpdateDesignProperty, getDesignProperty } = useDesignSync({
@@ -694,4 +694,5 @@ export default function EffectControls({ layer, onLayerUpdate, activeTextStyleKe
 
     </div>
   );
-}
+});
+export default EffectControls;

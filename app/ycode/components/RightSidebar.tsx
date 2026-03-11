@@ -84,7 +84,7 @@ import { useLayerLocks } from '@/hooks/use-layer-locks';
 import { classesToDesign, mergeDesign, removeConflictsForClass, getRemovedPropertyClasses } from '@/lib/tailwind-class-mapper';
 import { cn } from '@/lib/utils';
 import { sanitizeHtmlId } from '@/lib/html-utils';
-import { isFieldVariable, getCollectionVariable, findParentCollectionLayer, findAllParentCollectionLayers, isTextEditable, findLayerWithParent, resetBindingsOnCollectionSourceChange, isInputInsideFilter } from '@/lib/layer-utils';
+import { isFieldVariable, getCollectionVariable, findParentCollectionLayer, findAllParentCollectionLayers, isTextEditable, findLayerWithParent, resetBindingsOnCollectionSourceChange, isInputInsideFilter, getLayerIndexes, indexedFindLayerById, indexedFindLayerWithParent, indexedFindParentCollectionLayer } from '@/lib/layer-utils';
 import { detachSpecificLayerFromComponent } from '@/lib/component-utils';
 import { convertContentToValue, parseValueToContent } from '@/lib/cms-variables-utils';
 import { createTextComponentVariableValue } from '@/lib/variable-utils';
@@ -201,7 +201,7 @@ const RightSidebar = React.memo(function RightSidebar({
   const layerLocksRef = useRef(layerLocks);
   layerLocksRef.current = layerLocks;
 
-  const draftsByPageId = usePagesStore((state) => state.draftsByPageId);
+  const currentDraft = usePagesStore((state) => currentPageId ? state.draftsByPageId[currentPageId] : null);
   const setDraftLayers = usePagesStore((state) => state.setDraftLayers);
   const pages = usePagesStore((state) => state.pages);
 
@@ -219,28 +219,18 @@ const RightSidebar = React.memo(function RightSidebar({
     if (editingComponentId) {
       return componentDrafts[editingComponentId] || [];
     } else if (currentPageId) {
-      const draft = draftsByPageId[currentPageId];
-      return draft ? draft.layers : [];
+      return currentDraft ? currentDraft.layers : [];
     }
     return [];
-  }, [editingComponentId, componentDrafts, currentPageId, draftsByPageId]);
+  }, [editingComponentId, componentDrafts, currentPageId, currentDraft]);
 
-  // Helper to find layer by ID
-  const findLayerById = useCallback((layerId: string | null): Layer | null => {
-    if (!layerId || !allLayers.length) return null;
-
-    const stack: Layer[] = [...allLayers];
-    while (stack.length) {
-      const node = stack.shift()!;
-      if (node.id === layerId) return node;
-      if (node.children) stack.push(...node.children);
-    }
-    return null;
-  }, [allLayers]);
+  // Cached layer index for O(1) lookups
+  const layerIndexes = useMemo(() => getLayerIndexes(allLayers), [allLayers]);
 
   const selectedLayer: Layer | null = useMemo(() => {
-    return findLayerById(selectedLayerId);
-  }, [selectedLayerId, findLayerById]);
+    if (!selectedLayerId) return null;
+    return indexedFindLayerById(layerIndexes, selectedLayerId);
+  }, [selectedLayerId, layerIndexes]);
 
   const selectedLayerRef = useRef(selectedLayer);
   selectedLayerRef.current = selectedLayer;
@@ -250,44 +240,41 @@ const RightSidebar = React.memo(function RightSidebar({
 
   // Get the layer whose interactions we're editing (different from selected layer during target selection)
   const interactionOwnerLayer: Layer | null = useMemo(() => {
-    return findLayerById(interactionOwnerLayerId);
-  }, [interactionOwnerLayerId, findLayerById]);
+    if (!interactionOwnerLayerId) return null;
+    return indexedFindLayerById(layerIndexes, interactionOwnerLayerId);
+  }, [interactionOwnerLayerId, layerIndexes]);
 
   // Check if selected layer is at root level (has no parent) - used to disable pagination
   const isSelectedLayerAtRoot: boolean = useMemo(() => {
-    if (!selectedLayerId || !allLayers.length) return false;
-    const result = findLayerWithParent(allLayers, selectedLayerId);
+    if (!selectedLayerId) return false;
+    const result = indexedFindLayerWithParent(layerIndexes, selectedLayerId);
     return result?.parent === null;
-  }, [selectedLayerId, allLayers]);
+  }, [selectedLayerId, layerIndexes]);
 
   // Check if selected collection is nested inside another collection
-  // If so, we hide the pagination option entirely (not just disable it)
   const isNestedInCollection: boolean = useMemo(() => {
     if (!selectedLayer || !selectedLayerId) return false;
-
     const collectionVar = getCollectionVariable(selectedLayer);
     if (!collectionVar) return false;
-
-    const parentCollection = findParentCollectionLayer(allLayers, selectedLayerId);
-    return !!parentCollection;
-  }, [selectedLayer, selectedLayerId, allLayers]);
+    return !!indexedFindParentCollectionLayer(layerIndexes, selectedLayerId);
+  }, [selectedLayer, selectedLayerId, layerIndexes]);
 
   // Check if link settings should be hidden:
   // - Buttons inside a form (they act as submit buttons)
   // - Any layer inside a button (the button itself handles the link)
   const shouldHideLinkSettings: boolean = useMemo(() => {
     if (!selectedLayer || !selectedLayerId) return false;
-
-    let current = findLayerWithParent(allLayers, selectedLayerId)?.parent ?? null;
-    while (current) {
-      if (current.name === 'button') return true;
-      if (current.name === 'lightbox') return true;
-      if (current.name === 'form' && selectedLayer.name === 'button') return true;
-      const parentResult = findLayerWithParent(allLayers, current.id);
-      current = parentResult?.parent ?? null;
+    let parentId = layerIndexes.parentMap.get(selectedLayerId);
+    while (parentId) {
+      const parent = layerIndexes.layerMap.get(parentId);
+      if (!parent) break;
+      if (parent.name === 'button') return true;
+      if (parent.name === 'lightbox') return true;
+      if (parent.name === 'form' && selectedLayer.name === 'button') return true;
+      parentId = layerIndexes.parentMap.get(parentId);
     }
     return false;
-  }, [selectedLayer, selectedLayerId, allLayers]);
+  }, [selectedLayer, selectedLayerId, layerIndexes]);
 
   // Check if pagination should be disabled (only for root-level case where we show a message)
   const isPaginationDisabled: boolean = useMemo(() => {
@@ -627,7 +614,7 @@ const RightSidebar = React.memo(function RightSidebar({
   }, [classesInput]);
 
   // Get applied layer style and its classes
-  const { getStyleById } = useLayerStylesStore();
+  const getStyleById = useLayerStylesStore((state) => state.getStyleById);
   const appliedStyle = selectedLayer?.styleId ? getStyleById(selectedLayer.styleId) : undefined;
   const styleClassesArray = useMemo(() => {
     if (!appliedStyle || !appliedStyle.classes) return [];
@@ -1173,7 +1160,7 @@ const RightSidebar = React.memo(function RightSidebar({
   };
 
   const getSortLinkedInputName = (inputLayerId: string): string => {
-    const inputLayer = findLayerById(inputLayerId);
+    const inputLayer = indexedFindLayerById(layerIndexes, inputLayerId);
     if (!inputLayer) return `Unknown [${inputLayerId}]`;
     const layerName = inputLayer.customName || inputLayer.name || 'Input';
     return `${layerName} [${inputLayerId}]`;
@@ -1375,7 +1362,8 @@ const RightSidebar = React.memo(function RightSidebar({
   // Helper: Add or replace pagination wrapper
   const addOrReplacePaginationWrapper = (collectionLayerId: string, mode: 'pages' | 'load_more') => {
     const currentLayers = getCurrentLayersFromStore();
-    const parentResult = findLayerWithParent(currentLayers, collectionLayerId);
+    const idx = getLayerIndexes(currentLayers);
+    const parentResult = indexedFindLayerWithParent(idx, collectionLayerId);
     const parentLayer = parentResult?.parent;
 
     if (!parentLayer) {
@@ -1388,24 +1376,19 @@ const RightSidebar = React.memo(function RightSidebar({
       ? createPagesWrapper(collectionLayerId)
       : createLoadMoreWrapper(collectionLayerId);
 
-    // Get parent's CURRENT children from fresh lookup
-    const freshParentResult = findLayerWithParent(currentLayers, parentLayer.id);
-    const freshParent = freshParentResult?.layer || parentLayer;
-    const parentChildren = freshParent.children || [];
+    const parentChildren = parentLayer.children || [];
 
     const collectionIndex = parentChildren.findIndex(c => c.id === collectionLayerId);
     const existingPaginationIndex = parentChildren.findIndex(c => c.id === paginationWrapperId);
 
     let newChildren: Layer[];
     if (existingPaginationIndex === -1) {
-      // Add new wrapper after collection
       newChildren = [
         ...parentChildren.slice(0, collectionIndex + 1),
         paginationWrapper,
         ...parentChildren.slice(collectionIndex + 1),
       ];
     } else {
-      // Replace existing wrapper
       newChildren = parentChildren.map(c => c.id === paginationWrapperId ? paginationWrapper : c);
     }
 
@@ -1415,15 +1398,14 @@ const RightSidebar = React.memo(function RightSidebar({
   // Helper: Remove pagination wrapper
   const removePaginationWrapper = (collectionLayerId: string) => {
     const currentLayers = getCurrentLayersFromStore();
-    const parentResult = findLayerWithParent(currentLayers, collectionLayerId);
+    const idx = getLayerIndexes(currentLayers);
+    const parentResult = indexedFindLayerWithParent(idx, collectionLayerId);
     const parentLayer = parentResult?.parent;
 
     if (!parentLayer) return;
 
     const paginationWrapperId = `${collectionLayerId}-pagination-wrapper`;
-    const freshParentResult = findLayerWithParent(currentLayers, parentLayer.id);
-    const freshParent = freshParentResult?.layer || parentLayer;
-    const parentChildren = freshParent.children || [];
+    const parentChildren = parentLayer.children || [];
 
     const newChildren = parentChildren.filter(c => c.id !== paginationWrapperId);
     handleLayerUpdate(parentLayer.id, { children: newChildren });
@@ -1507,24 +1489,11 @@ const RightSidebar = React.memo(function RightSidebar({
     }
   };
 
-  // Get parent collection layer for the selected layer
+  // Get parent collection layer for the selected layer (O(1) via index)
   const parentCollectionLayer = useMemo(() => {
-    if (!selectedLayerId || !currentPageId) return null;
-
-    // Get layers from either component draft or page draft
-    let layers: Layer[] = [];
-    if (editingComponentId) {
-      layers = componentDrafts[editingComponentId] || [];
-    } else {
-      const draft = draftsByPageId[currentPageId];
-      layers = draft ? draft.layers : [];
-    }
-
-    if (!layers.length) return null;
-
-    // Use the utility function from layer-utils
-    return findParentCollectionLayer(layers, selectedLayerId);
-  }, [selectedLayerId, editingComponentId, componentDrafts, currentPageId, draftsByPageId]);
+    if (!selectedLayerId) return null;
+    return indexedFindParentCollectionLayer(layerIndexes, selectedLayerId);
+  }, [selectedLayerId, layerIndexes]);
 
   // Get collection fields if parent collection layer exists
   const currentPage = useMemo(() => {
@@ -1553,17 +1522,9 @@ const RightSidebar = React.memo(function RightSidebar({
 
   // Build field groups for multi-source inline variable selection
   const fieldGroups = useMemo(() => {
-    if (!selectedLayerId) return undefined;
-    let layers: Layer[] = [];
-    if (editingComponentId) {
-      layers = componentDrafts[editingComponentId] || [];
-    } else if (currentPageId) {
-      const draft = draftsByPageId[currentPageId];
-      layers = draft ? draft.layers : [];
-    }
-    if (!layers.length) return undefined;
-    return buildFieldGroupsForLayer(selectedLayerId, layers, currentPage, fields, collections);
-  }, [selectedLayerId, editingComponentId, componentDrafts, currentPageId, draftsByPageId, currentPage, fields, collections]);
+    if (!selectedLayerId || !allLayers.length) return undefined;
+    return buildFieldGroupsForLayer(selectedLayerId, allLayers, currentPage, fields, collections);
+  }, [selectedLayerId, allLayers, currentPage, fields, collections]);
 
   // Get collection fields for the currently selected collection layer (for Sort By dropdown)
   const selectedCollectionFields = useMemo(() => {

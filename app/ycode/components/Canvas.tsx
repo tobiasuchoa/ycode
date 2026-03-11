@@ -442,13 +442,15 @@ export default function Canvas({
         editorBreakpoint={breakpoint}
       />
     );
+  // selectedLayerId and hoveredLayerId are intentionally excluded from deps:
+  // SingleLayerRenderer subscribes to the store directly for selection state,
+  // so we don't need to re-render the entire iframe layer tree on selection changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     iframeReady,
     resolvedLayers,
     editingComponentId,
     editingComponentVariables,
-    selectedLayerId,
-    effectiveHoveredLayerId,
     pageId,
     pageCollectionItem,
     handleLayerClick,

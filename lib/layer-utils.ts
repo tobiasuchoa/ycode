@@ -18,6 +18,70 @@ import { layerHasLink, hasLinkInTree, hasRichTextLinks } from '@/lib/link-utils'
 // Alias for backwards compatibility within this file
 const hasLinkSettings = layerHasLink;
 
+// ─── Cached Layer Index ───
+
+export interface LayerIndexes {
+  layerMap: Map<string, Layer>;
+  parentMap: Map<string, string>;
+}
+
+const indexCache = new WeakMap<Layer[], LayerIndexes>();
+
+function buildLayerIndexes(layers: Layer[]): LayerIndexes {
+  const layerMap = new Map<string, Layer>();
+  const parentMap = new Map<string, string>();
+  const walk = (nodes: Layer[], parentId: string | null) => {
+    for (const node of nodes) {
+      layerMap.set(node.id, node);
+      if (parentId) parentMap.set(node.id, parentId);
+      if (node.children) walk(node.children, node.id);
+    }
+  };
+  walk(layers, null);
+  return { layerMap, parentMap };
+}
+
+export function getLayerIndexes(layers: Layer[]): LayerIndexes {
+  let cached = indexCache.get(layers);
+  if (!cached) {
+    cached = buildLayerIndexes(layers);
+    indexCache.set(layers, cached);
+  }
+  return cached;
+}
+
+export function indexedFindLayerById(indexes: LayerIndexes, id: string): Layer | null {
+  return indexes.layerMap.get(id) ?? null;
+}
+
+export function indexedFindLayerWithParent(indexes: LayerIndexes, targetId: string): { layer: Layer; parent: Layer | null } | null {
+  const layer = indexes.layerMap.get(targetId);
+  if (!layer) return null;
+  const parentId = indexes.parentMap.get(targetId);
+  const parent = parentId ? indexes.layerMap.get(parentId) ?? null : null;
+  return { layer, parent };
+}
+
+export function indexedFindParentCollectionLayer(indexes: LayerIndexes, layerId: string): Layer | null {
+  let parentId = indexes.parentMap.get(layerId);
+  while (parentId) {
+    const parent = indexes.layerMap.get(parentId);
+    if (parent && getCollectionVariable(parent)) return parent;
+    parentId = indexes.parentMap.get(parentId);
+  }
+  return null;
+}
+
+export function indexedFindAncestor(indexes: LayerIndexes, layerId: string, predicate: (layer: Layer) => boolean): Layer | null {
+  let parentId = indexes.parentMap.get(layerId);
+  while (parentId) {
+    const parent = indexes.layerMap.get(parentId);
+    if (parent && predicate(parent)) return parent;
+    parentId = indexes.parentMap.get(parentId);
+  }
+  return null;
+}
+
 /**
  * Strip UI-only properties from layers before comparison/hashing
  * These properties (like 'open') are used for UI state and shouldn't trigger version changes

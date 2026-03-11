@@ -64,6 +64,7 @@
     "@react-spring/web": "^10.0.3",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.76.1",
+    "@tanstack/react-virtual": "^3.13.21",
     "@tiptap/core": "^3.10.5",
     "@tiptap/extension-heading": "^3.10.7",
     "@tiptap/extension-history": "^3.20.0",

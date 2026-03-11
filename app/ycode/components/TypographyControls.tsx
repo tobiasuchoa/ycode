@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
@@ -35,7 +35,7 @@ interface TypographyControlsProps {
   collections?: Collection[];
 }
 
-export default function TypographyControls({ layer, onLayerUpdate, activeTextStyleKey, fieldGroups, allFields, collections }: TypographyControlsProps) {
+const TypographyControls = memo(function TypographyControls({ layer, onLayerUpdate, activeTextStyleKey, fieldGroups, allFields, collections }: TypographyControlsProps) {
   const { activeBreakpoint, activeUIState } = useEditorStore();
   const showTextStyleControls = useEditorStore((state) => state.showTextStyleControls());
   const { updateDesignProperty, updateDesignProperties, debouncedUpdateDesignProperty, getDesignProperty } = useDesignSync({
@@ -588,4 +588,5 @@ export default function TypographyControls({ layer, onLayerUpdate, activeTextSty
       </div>
     </div>
   );
-}
+});
+export default TypographyControls;

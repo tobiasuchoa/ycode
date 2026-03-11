@@ -405,8 +405,9 @@ const LayerItem: React.FC<{
   components: componentsProp,
   ancestorComponentIds,
 }) => {
-  const isSelected = selectedLayerId === layer.id;
-  const isHovered = hoveredLayerId === layer.id;
+  // Subscribe to selection state from the store for reactive updates without
+  // forcing the entire LayerRenderer tree to re-render when selection changes
+  const isSelected = useEditorStore((state) => state.selectedLayerId === layer.id);
   const isEditing = editingLayerId === layer.id;
   const isDragging = activeLayerId === layer.id;
   const textEditable = isTextEditable(layer);
@@ -460,6 +461,8 @@ const LayerItem: React.FC<{
   const allComponents = storeComponents.length > 0 ? storeComponents : (componentsProp ?? []);
 
   // Shared props passed to nested LayerRenderer calls (component instances & rich-text components)
+  // selectedLayerId and hoveredLayerId are omitted: each SingleLayerRenderer subscribes
+  // directly to useEditorStore for selection state to avoid cascading re-renders.
   const sharedRendererProps = useMemo(() => ({
     isEditMode,
     isPublished,
@@ -492,7 +495,10 @@ const LayerItem: React.FC<{
     anchorMap,
     resolvedAssets,
     components: componentsProp,
-  }), [isEditMode, isPublished, selectedLayerId, hoveredLayerId, onLayerClick, onLayerUpdate, onLayerHover, pageId, collectionLayerData, collectionLayerItemId, effectiveLayerDataMap, pageCollectionItemId, pageCollectionItemData, hiddenLayerInfo, editorHiddenLayerIds, editorBreakpoint, currentLocale, availableLocales, localeSelectorFormat, liveLayerUpdates, liveComponentUpdates, isInsideForm, parentFormSettings, pages, folders, collectionItemSlugs, isPreview, translations, anchorMap, resolvedAssets, componentsProp]);
+  // selectedLayerId and hoveredLayerId kept in the object for SSR/published mode
+  // but excluded from deps so changes don't cascade re-renders in edit mode.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [isEditMode, isPublished, onLayerClick, onLayerUpdate, onLayerHover, pageId, collectionLayerData, collectionLayerItemId, effectiveLayerDataMap, pageCollectionItemId, pageCollectionItemData, hiddenLayerInfo, editorHiddenLayerIds, editorBreakpoint, currentLocale, availableLocales, localeSelectorFormat, liveLayerUpdates, liveComponentUpdates, isInsideForm, parentFormSettings, pages, folders, collectionItemSlugs, isPreview, translations, anchorMap, resolvedAssets, componentsProp]);
 
   // Callback for rendering embedded components inside rich-text content
   // Clicks on the embedded component's internal layers should select the text layer
@@ -1582,6 +1588,37 @@ const LayerItem: React.FC<{
       delete elementProps.type;
     }
 
+    // When an <a> layer has link settings, apply href/target/rel directly
+    if (htmlTag === 'a' && !isButtonWithLink && !isEditMode && layer.variables?.link) {
+      const aLinkSettings = layer.variables.link;
+      if (isValidLinkSettings(aLinkSettings)) {
+        const aLinkContext: LinkResolutionContext = {
+          pages,
+          folders,
+          collectionItemSlugs,
+          collectionItemId: collectionLayerItemId,
+          pageCollectionItemId,
+          collectionItemData: collectionLayerData,
+          pageCollectionItemData: pageCollectionItemData || undefined,
+          isPreview,
+          locale: currentLocale,
+          translations,
+          getAsset,
+          anchorMap,
+          resolvedAssets,
+          layerDataMap: effectiveLayerDataMap,
+        };
+        const aLinkHref = generateLinkHref(aLinkSettings, aLinkContext);
+        if (aLinkHref) {
+          elementProps.href = aLinkHref;
+          elementProps.target = aLinkSettings.target || '_self';
+          const aLinkRel = aLinkSettings.rel || (aLinkSettings.target === '_blank' ? 'noopener noreferrer' : undefined);
+          if (aLinkRel) elementProps.rel = aLinkRel;
+          if (aLinkSettings.download) elementProps.download = aLinkSettings.download;
+        }
+      }
+    }
+
     // Add data-gsap-hidden attribute for elements that should start hidden
     const hiddenInfo = hiddenLayerInfo?.find(info => info.layerId === layer.id);
     if (hiddenInfo) {
@@ -1590,8 +1627,13 @@ const LayerItem: React.FC<{
     }
 
     // Handle alert elements (for form success/error messages)
+    // Hidden by default in published/preview mode; form submission JS reveals them.
     if (layer.alertType) {
       elementProps['data-alert-type'] = layer.alertType;
+      if (!isEditMode) {
+        const existingStyle = (typeof elementProps.style === 'object' && elementProps.style) || {};
+        elementProps.style = { ...existingStyle, display: 'none' };
+      }
     }
 
     // Add slider data attributes for production/preview rendering (SliderInitializer)
@@ -1647,12 +1689,12 @@ const LayerItem: React.FC<{
         (editorBreakpoint && hiddenBreakpoints.includes(editorBreakpoint));
 
       if (shouldHideOnBreakpoint) {
-        const isSelectedOrChildSelected = isSelected || (selectedLayerId && (() => {
-          // Check if selectedLayerId is a descendant of this layer
+        const storeSelectedId = useEditorStore.getState().selectedLayerId;
+        const isSelectedOrChildSelected = isSelected || (storeSelectedId && (() => {
           const checkDescendants = (children: Layer[] | undefined): boolean => {
             if (!children) return false;
             for (const child of children) {
-              if (child.id === selectedLayerId) return true;
+              if (child.id === storeSelectedId) return true;
               if (checkDescendants(child.children)) return true;
             }
             return false;
@@ -2644,8 +2686,9 @@ const LayerItem: React.FC<{
   // Wrap with link if layer has link settings (published mode only)
   // In edit mode, links are not interactive to allow layer selection
   // Skip for buttons — they render as <a> directly (see isButtonWithLink)
+  // Skip for <a> layers — they already render as <a> and nesting <a> inside <a> is invalid HTML
   const linkSettings = layer.variables?.link;
-  const shouldWrapWithLink = !isEditMode && !isButtonWithLink && isValidLinkSettings(linkSettings);
+  const shouldWrapWithLink = !isEditMode && !isButtonWithLink && htmlTag !== 'a' && isValidLinkSettings(linkSettings);
 
   if (shouldWrapWithLink && linkSettings) {
     // Build link context for layer-level link resolution

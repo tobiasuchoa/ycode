@@ -13,7 +13,8 @@
  */
 
 // 1. React/Next.js
-import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useCallback, useEffect, useRef, useLayoutEffect } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 
 // 2. External libraries
 import { DndContext, DragOverlay, DragStartEvent, DragEndEvent, DragOverEvent, PointerSensor, useSensor, useSensors, closestCenter, useDraggable, useDroppable } from '@dnd-kit/core';
@@ -1035,6 +1036,41 @@ export default function LayersTree({
     }
   }, [shouldScrollToSelected]);
 
+  // Virtualizer: discover the nearest scroll-container ancestor
+  const scrollContainerRef = useRef<HTMLElement | null>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    let el = wrapperRef.current?.parentElement ?? null;
+    while (el) {
+      const style = getComputedStyle(el);
+      if (style.overflowY === 'auto' || style.overflowY === 'scroll') {
+        scrollContainerRef.current = el;
+        return;
+      }
+      el = el.parentElement;
+    }
+  }, []);
+
+  const ROW_HEIGHT = 32;
+
+  const virtualizer = useVirtualizer({
+    count: flattenedNodes.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 20,
+  });
+
+  // Scroll to selected layer using the virtualizer
+  useEffect(() => {
+    if (shouldScrollToSelected && selectedLayerId) {
+      const idx = flattenedNodes.findIndex(n => n.id === selectedLayerId);
+      if (idx >= 0) {
+        virtualizer.scrollToIndex(idx, { align: 'center' });
+      }
+    }
+  }, [shouldScrollToSelected, selectedLayerId, flattenedNodes, virtualizer]);
+
   // Pull hover state management from editor store
   const { setHoveredLayerId: setHoveredLayerIdFromStore } = useEditorStore();
 
@@ -1641,47 +1677,61 @@ export default function LayersTree({
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
     >
-      <div className="space-y-0">
-        {flattenedNodes.map((node) => {
+      <div ref={wrapperRef} style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+        {virtualizer.getVirtualItems().map((virtualRow) => {
+          const node = flattenedNodes[virtualRow.index];
           const selectionData = nodeSelectionData.get(node.id)!;
 
           return (
-            <LayerRow
+            <div
               key={node.id}
-              node={node}
-              isSelected={selectionData.isSelected}
-              isChildOfSelected={selectionData.isChildOfSelected}
-              isLastVisibleDescendant={selectionData.isLastVisibleDescendant}
-              hasVisibleChildren={selectionData.hasVisibleChildren}
-              canHaveChildren={node.canHaveChildren}
-              isOver={overId === node.id}
-              isDragging={activeId === node.id}
-              isDragActive={!!activeId}
-              dropPosition={overId === node.id ? dropPosition : null}
-              highlightedDepths={highlightedDepths}
-              onSelect={handleSelect}
-              onMultiSelect={handleMultiSelect}
-              onToggle={handleToggle}
-              pageId={pageId}
-              selectedLayerId={selectedLayerId}
-              liveLayerUpdates={liveLayerUpdates}
-              liveComponentUpdates={liveComponentUpdates}
-              scrollToSelected={shouldScrollToSelected}
-              activeBreakpoint={activeBreakpoint}
-              isRenaming={renamingLayerId === node.id}
-              onRenameStart={handleRenameStart}
-              onRenameConfirm={handleRenameConfirm}
-              onToggleVisibility={handleToggleVisibility}
-            />
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: ROW_HEIGHT,
+                transform: `translateY(${virtualRow.start}px)`,
+              }}
+            >
+              <LayerRow
+                node={node}
+                isSelected={selectionData.isSelected}
+                isChildOfSelected={selectionData.isChildOfSelected}
+                isLastVisibleDescendant={selectionData.isLastVisibleDescendant}
+                hasVisibleChildren={selectionData.hasVisibleChildren}
+                canHaveChildren={node.canHaveChildren}
+                isOver={overId === node.id}
+                isDragging={activeId === node.id}
+                isDragActive={!!activeId}
+                dropPosition={overId === node.id ? dropPosition : null}
+                highlightedDepths={highlightedDepths}
+                onSelect={handleSelect}
+                onMultiSelect={handleMultiSelect}
+                onToggle={handleToggle}
+                pageId={pageId}
+                selectedLayerId={selectedLayerId}
+                liveLayerUpdates={liveLayerUpdates}
+                liveComponentUpdates={liveComponentUpdates}
+                scrollToSelected={shouldScrollToSelected}
+                activeBreakpoint={activeBreakpoint}
+                isRenaming={renamingLayerId === node.id}
+                onRenameStart={handleRenameStart}
+                onRenameConfirm={handleRenameConfirm}
+                onToggleVisibility={handleToggleVisibility}
+              />
+            </div>
           );
         })}
 
         {/* Drop zone at the end for dropping layers at the bottom */}
-        <EndDropZone
-          isDragActive={!!activeId}
-          isOver={overId === 'end-drop-zone'}
-          editingComponentId={editingComponentId}
-        />
+        <div style={{ position: 'absolute', top: virtualizer.getTotalSize(), left: 0, width: '100%' }}>
+          <EndDropZone
+            isDragActive={!!activeId}
+            isOver={overId === 'end-drop-zone'}
+            editingComponentId={editingComponentId}
+          />
+        </div>
       </div>
 
       {/* Drag Overlay - custom ghost element with 40px offset */}

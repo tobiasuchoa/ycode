@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, memo } from 'react';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useDesignSync } from '@/hooks/use-design-sync';
@@ -61,7 +61,7 @@ const isTextLayer = (layer: Layer | null): boolean => {
   return layer.name === 'text';
 };
 
-export default function BackgroundsControls({ layer, onLayerUpdate, activeTextStyleKey, fieldGroups, allFields, collections }: BackgroundsControlsProps) {
+const BackgroundsControls = memo(function BackgroundsControls({ layer, onLayerUpdate, activeTextStyleKey, fieldGroups, allFields, collections }: BackgroundsControlsProps) {
   const { activeBreakpoint, activeUIState } = useEditorStore();
   const openFileManager = useEditorStore((state) => state.openFileManager);
   const { updateDesignProperty, debouncedUpdateDesignProperty, getDesignProperty } = useDesignSync({
@@ -544,4 +544,5 @@ export default function BackgroundsControls({ layer, onLayerUpdate, activeTextSt
       </div>
     </div>
   );
-}
+});
+export default BackgroundsControls;

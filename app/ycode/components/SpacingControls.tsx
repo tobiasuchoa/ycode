@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, memo } from 'react';
 import { Label } from '@/components/ui/label';
 import { useDesignSync } from '@/hooks/use-design-sync';
 import { useControlledInputs } from '@/hooks/use-controlled-input';
@@ -16,7 +16,7 @@ interface SpacingControlsProps {
   activeTextStyleKey?: string | null;
 }
 
-export default function SpacingControls({ layer, onLayerUpdate, activeTextStyleKey }: SpacingControlsProps) {
+const SpacingControls = memo(function SpacingControls({ layer, onLayerUpdate, activeTextStyleKey }: SpacingControlsProps) {
   const { activeBreakpoint, activeUIState } = useEditorStore();
   const { debouncedUpdateDesignProperty, getDesignProperty } = useDesignSync({
     layer,
@@ -100,4 +100,5 @@ export default function SpacingControls({ layer, onLayerUpdate, activeTextStyleK
       />
     </div>
   );
-}
+});
+export default SpacingControls;

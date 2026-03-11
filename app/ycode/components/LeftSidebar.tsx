@@ -57,8 +57,8 @@ const LeftSidebar = React.memo(function LeftSidebar({
   const [elementLibraryTab, setElementLibraryTab] = useState<'elements' | 'layouts' | 'components'>('elements');
   const [assetMessage, setAssetMessage] = useState<string | null>(null);
 
-  // Optimize store subscriptions - use selective selectors
-  const draftsByPageId = usePagesStore((state) => state.draftsByPageId);
+  // Optimize store subscriptions - scoped to current page only
+  const currentDraft = usePagesStore((state) => currentPageId ? state.draftsByPageId[currentPageId] : null);
   const loadFolders = usePagesStore((state) => state.loadFolders);
   const loadDraft = usePagesStore((state) => state.loadDraft);
   const deletePage = usePagesStore((state) => state.deletePage);
@@ -162,9 +162,8 @@ const LeftSidebar = React.memo(function LeftSidebar({
 
     // Otherwise show page layers
     if (!currentPageId) return [];
-    const draft = draftsByPageId[currentPageId];
-    return draft ? draft.layers : [];
-  }, [editingComponentId, componentDrafts, currentPageId, draftsByPageId]);
+    return currentDraft ? currentDraft.layers : [];
+  }, [editingComponentId, componentDrafts, currentPageId, currentDraft]);
 
   // Handle layer reordering from drag & drop
   const handleLayersReorder = useCallback((newLayers: Layer[], movedLayerId?: string) => {
@@ -204,12 +203,12 @@ const LeftSidebar = React.memo(function LeftSidebar({
   // Load draft when page changes (only if not already in store)
   // Wrapped in startTransition so draft loading doesn't block UI updates
   useEffect(() => {
-    if (currentPageId && !draftsByPageId[currentPageId]) {
+    if (currentPageId && !currentDraft) {
       startTransition(() => {
         loadDraft(currentPageId);
       });
     }
-  }, [currentPageId, loadDraft, draftsByPageId]);
+  }, [currentPageId, loadDraft, currentDraft]);
 
   // Preload adjacent page drafts in background for instant navigation
   // Uses requestIdleCallback to avoid blocking the main thread
@@ -226,33 +225,27 @@ const LeftSidebar = React.memo(function LeftSidebar({
       Math.min(pages.length, currentIndex + 3)
     ).filter(p => p.id !== currentPageId);
 
-    // Preload drafts that aren't already cached
-    const pagesToPreload = adjacentPages.filter(p => !draftsByPageId[p.id]);
-
-    if (pagesToPreload.length === 0) return;
-
     // Use requestIdleCallback for low-priority background loading
     const preloadDrafts = () => {
+      const allDrafts = usePagesStore.getState().draftsByPageId;
+      const pagesToPreload = adjacentPages.filter(p => !allDrafts[p.id]);
       pagesToPreload.forEach((page, index) => {
-        // Stagger requests to avoid flooding the server
         setTimeout(() => {
           if (!usePagesStore.getState().draftsByPageId[page.id]) {
             loadDraft(page.id);
           }
-        }, index * 100); // 100ms stagger between requests
+        }, index * 100);
       });
     };
 
-    // Check if requestIdleCallback is available (not in all browsers)
     if ('requestIdleCallback' in window) {
       const idleCallbackId = requestIdleCallback(preloadDrafts, { timeout: 2000 });
       return () => cancelIdleCallback(idleCallbackId);
     } else {
-      // Fallback: use setTimeout with a delay
       const timeoutId = setTimeout(preloadDrafts, 500);
       return () => clearTimeout(timeoutId);
     }
-  }, [currentPageId, pages, draftsByPageId, loadDraft]);
+  }, [currentPageId, pages, loadDraft]);
 
   // Handle asset selection
   const handleAssetSelect = (asset: { id: string; public_url: string; filename: string }) => {

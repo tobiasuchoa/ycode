@@ -522,8 +522,8 @@ const CenterCanvas = React.memo(function CenterCanvas({
   // Track whether zoom calculation is ready (prevents flash of wrong zoom on initial load)
   const [isCanvasReady, setIsCanvasReady] = useState(false);
 
-  // Optimize store subscriptions - use selective selectors
-  const draftsByPageId = usePagesStore((state) => state.draftsByPageId);
+  // Optimize store subscriptions - use selective selectors (scoped to current page only)
+  const currentDraft = usePagesStore((state) => currentPageId ? state.draftsByPageId[currentPageId] : null);
   const addLayerFromTemplate = usePagesStore((state) => state.addLayerFromTemplate);
   const updateLayer = usePagesStore((state) => state.updateLayer);
   const deleteLayer = usePagesStore((state) => state.deleteLayer);
@@ -600,10 +600,10 @@ const CenterCanvas = React.memo(function CenterCanvas({
   // Load draft when page changes (ensure draft exists before rendering)
   const loadDraft = usePagesStore((state) => state.loadDraft);
   useEffect(() => {
-    if (currentPageId && !draftsByPageId[currentPageId]) {
+    if (currentPageId && !currentDraft) {
       loadDraft(currentPageId);
     }
-  }, [currentPageId, loadDraft, draftsByPageId]);
+  }, [currentPageId, loadDraft, currentDraft]);
 
   // Reset content height when page changes to force Canvas to recalculate
   useEffect(() => {
@@ -820,16 +820,15 @@ const CenterCanvas = React.memo(function CenterCanvas({
       return [];
     }
 
-    const draft = draftsByPageId[currentPageId];
-    return draft ? draft.layers : [];
-  }, [editingComponentId, componentDrafts, currentPageId, draftsByPageId]);
+    return currentDraft ? currentDraft.layers : [];
+  }, [editingComponentId, componentDrafts, currentPageId, currentDraft]);
 
   // Check if we're waiting for a draft to load (page selected but no draft yet)
   const isDraftLoading = useMemo(() => {
     if (editingComponentId) return false;
     if (!currentPageId) return false;
-    return !draftsByPageId[currentPageId];
-  }, [editingComponentId, currentPageId, draftsByPageId]);
+    return !currentDraft;
+  }, [editingComponentId, currentPageId, currentDraft]);
 
   // Check if canvas is empty (only Body layer with no children)
   const isCanvasEmpty = useMemo(() => {
@@ -935,9 +934,8 @@ const CenterCanvas = React.memo(function CenterCanvas({
 
     // First, check if we have an optimistically updated item in the draft
     if (currentPageId) {
-      const draft = draftsByPageId[currentPageId];
-      if (draft && (draft as any).collectionItem) {
-        return (draft as any).collectionItem;
+      if (currentDraft && (currentDraft as any).collectionItem) {
+        return (currentDraft as any).collectionItem;
       }
     }
 
@@ -948,7 +946,7 @@ const CenterCanvas = React.memo(function CenterCanvas({
     }
     const itemsForCollection = collectionItemsFromStore[collectionId] || [];
     return itemsForCollection.find((item) => item.id === currentPageCollectionItemId) || null;
-  }, [currentPage, currentPageId, currentPageCollectionItemId, collectionItemsFromStore, draftsByPageId]);
+  }, [currentPage, currentPageId, currentPageCollectionItemId, collectionItemsFromStore, currentDraft]);
 
   // Page collection fields (used for Canvas props and reference loading)
   const pageCollectionFields = useMemo(() => {
@@ -971,15 +969,14 @@ const CenterCanvas = React.memo(function CenterCanvas({
     if (editingComponentId) {
       layersToSearch = componentDrafts[editingComponentId] || [];
     } else {
-      const draft = draftsByPageId[currentPageId];
-      layersToSearch = draft ? draft.layers : [];
+      layersToSearch = currentDraft ? currentDraft.layers : [];
     }
 
     if (!layersToSearch.length) return null;
 
     // Find parent collection layer
     return findParentCollectionLayer(layersToSearch, editingLayerId);
-  }, [editingLayerId, editingComponentId, componentDrafts, currentPageId, draftsByPageId]);
+  }, [editingLayerId, editingComponentId, componentDrafts, currentPageId, currentDraft]);
 
   // Build field groups for the canvas text editor's inline variable selection
   const fieldGroups = useMemo(() => {
@@ -988,12 +985,11 @@ const CenterCanvas = React.memo(function CenterCanvas({
     if (editingComponentId) {
       layers = componentDrafts[editingComponentId] || [];
     } else if (currentPageId) {
-      const draft = draftsByPageId[currentPageId];
-      layers = draft ? draft.layers : [];
+      layers = currentDraft ? currentDraft.layers : [];
     }
     if (!layers.length) return undefined;
     return buildFieldGroupsForLayer(editingLayerId, layers, currentPage, collectionFieldsFromStore, collectionsFromStore);
-  }, [editingLayerId, editingComponentId, componentDrafts, currentPageId, draftsByPageId, currentPage, collectionFieldsFromStore, collectionsFromStore]);
+  }, [editingLayerId, editingComponentId, componentDrafts, currentPageId, currentDraft, currentPage, collectionFieldsFromStore, collectionsFromStore]);
 
   // Create assets map for Canvas (asset ID -> asset)
   const assetsMap = useMemo(() => {
@@ -1074,9 +1070,8 @@ const CenterCanvas = React.memo(function CenterCanvas({
     // Check if multi-select
     if (selectedLayerIds.length > 1) {
       // Check restrictions for all layers
-      const draft = draftsByPageId[currentPageId];
-      if (draft) {
-        const layersToCheck = selectedLayerIds.map(id => findLayerById(draft.layers, id)).filter(Boolean) as Layer[];
+      if (currentDraft) {
+        const layersToCheck = selectedLayerIds.map(id => findLayerById(currentDraft.layers, id)).filter(Boolean) as Layer[];
         const canDeleteAll = layersToCheck.every(layer => canDeleteLayer(layer));
 
         if (canDeleteAll) {
@@ -1086,9 +1081,8 @@ const CenterCanvas = React.memo(function CenterCanvas({
       }
     } else {
       // Single layer deletion - check restrictions
-      const draft = draftsByPageId[currentPageId];
-      if (draft) {
-        const layer = findLayerById(draft.layers, selectedLayerId);
+      if (currentDraft) {
+        const layer = findLayerById(currentDraft.layers, selectedLayerId);
         if (!layer || !canDeleteLayer(layer)) {
           return;
         }
@@ -1096,16 +1090,15 @@ const CenterCanvas = React.memo(function CenterCanvas({
         setSelectedLayerId(null);
       }
     }
-  }, [selectedLayerId, currentPageId, selectedLayerIds, draftsByPageId, deleteLayers, clearSelection, deleteLayer, setSelectedLayerId]);
+  }, [selectedLayerId, currentPageId, selectedLayerIds, currentDraft, deleteLayers, clearSelection, deleteLayer, setSelectedLayerId]);
 
   const handleCanvasGapUpdate = useCallback((layerId: string, gapValue: string) => {
     if (!currentPageId) return;
 
     // Find the layer and update its gap class
-    const draft = draftsByPageId[currentPageId];
-    if (!draft) return;
+    if (!currentDraft) return;
 
-    const layer = findLayerById(draft.layers, layerId);
+    const layer = findLayerById(currentDraft.layers, layerId);
     if (!layer) return;
 
     // Get current classes
@@ -1119,7 +1112,7 @@ const CenterCanvas = React.memo(function CenterCanvas({
 
     // Update the layer
     updateLayer(currentPageId, layerId, { classes: newClasses });
-  }, [currentPageId, draftsByPageId, updateLayer]);
+  }, [currentPageId, currentDraft, updateLayer]);
 
   // Rich text sheet for canvas double-click (layers with components/variables)
   // Build field groups using the sheet target layer (not the canvas text editor layer)
@@ -1129,12 +1122,11 @@ const CenterCanvas = React.memo(function CenterCanvas({
     if (editingComponentId) {
       layers = componentDrafts[editingComponentId] || [];
     } else {
-      const draft = draftsByPageId[currentPageId];
-      layers = draft ? draft.layers : [];
+      layers = currentDraft ? currentDraft.layers : [];
     }
     if (!layers.length) return undefined;
     return buildFieldGroupsForLayer(richTextSheetLayerId, layers, currentPage, collectionFieldsFromStore, collectionsFromStore);
-  }, [richTextSheetLayerId, editingComponentId, componentDrafts, currentPageId, draftsByPageId, currentPage, collectionFieldsFromStore, collectionsFromStore]);
+  }, [richTextSheetLayerId, editingComponentId, componentDrafts, currentPageId, currentDraft, currentPage, collectionFieldsFromStore, collectionsFromStore]);
 
   // Track the current value locally so the value prop always matches the editor's
   // internal state. This prevents the editor's sync effect from resetting content
@@ -1148,7 +1140,7 @@ const CenterCanvas = React.memo(function CenterCanvas({
     }
     const source = editingComponentId
       ? componentDrafts[editingComponentId]
-      : currentPageId ? draftsByPageId[currentPageId]?.layers : null;
+      : currentDraft?.layers ?? null;
     const layer = source ? findLayerById(source as Layer[], richTextSheetLayerId) : null;
     setRichTextSheetValue(getRichTextValue(layer?.variables));
   // Only re-derive when the sheet target layer changes, not on every draft update
@@ -1310,8 +1302,7 @@ const CenterCanvas = React.memo(function CenterCanvas({
     if (editingComponentId) {
       layersToSearch = componentDrafts[editingComponentId] || [];
     } else {
-      const draft = draftsByPageId[currentPageId];
-      layersToSearch = draft ? draft.layers : [];
+      layersToSearch = currentDraft ? currentDraft.layers : [];
     }
 
     if (!layersToSearch.length) return null;
@@ -1340,7 +1331,7 @@ const CenterCanvas = React.memo(function CenterCanvas({
     if (selectedLayer?.name === 'slide') return null;
 
     return result;
-  }, [selectedLayerId, currentPageId, editingComponentId, componentDrafts, draftsByPageId]);
+  }, [selectedLayerId, currentPageId, editingComponentId, componentDrafts, currentDraft]);
 
   // Get selected layer name for drag preview
   const selectedLayerName = useMemo(() => {
@@ -1897,8 +1888,7 @@ const CenterCanvas = React.memo(function CenterCanvas({
               if (editingComponentId) {
                 layersToSearch = componentDrafts[editingComponentId] || [];
               } else if (currentPageId) {
-                const draft = draftsByPageId[currentPageId];
-                layersToSearch = draft ? draft.layers : [];
+                layersToSearch = currentDraft ? currentDraft.layers : [];
               }
               editingLayer = findLayerById(layersToSearch, editingLayerId);
             }
