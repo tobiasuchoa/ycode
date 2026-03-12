@@ -860,10 +860,9 @@ function ColorVariablesSection({
   };
 
   const handleCreate = async () => {
-    if (!editState || editState.mode !== 'create') return;
-    const trimmed = editState.name.trim();
-    if (!trimmed || !editState.color) return;
-    const result = await onCreate(trimmed, editState.color);
+    if (!editState || editState.mode !== 'create' || !editState.color) return;
+    const name = editState.name.trim() || editState.color.split('/')[0];
+    const result = await onCreate(name, editState.color);
     if (result) {
       onSelect(result.id);
       onEditStateChange(null);
@@ -875,10 +874,9 @@ function ColorVariablesSection({
   };
 
   const handleSaveEdit = async () => {
-    if (!editState || editState.mode !== 'edit' || !editState.id) return;
-    const trimmed = editState.name.trim();
-    if (!trimmed || !editState.color) return;
-    await onUpdate(editState.id, { name: trimmed, value: editState.color });
+    if (!editState || editState.mode !== 'edit' || !editState.id || !editState.color) return;
+    const name = editState.name.trim() || editState.color.split('/')[0];
+    await onUpdate(editState.id, { name, value: editState.color });
     onEditStateChange(null);
   };
 
@@ -1892,8 +1890,28 @@ export default function ColorPicker({
               placeholder="Variable name"
               className="h-8 text-xs"
               autoFocus
-              onKeyDown={(e) => {
+              onKeyDown={async (e) => {
                 if (e.key === 'Escape') setVarEditState(null);
+                if (e.key === 'Enter' && varEditState?.color) {
+                  e.preventDefault();
+                  const name = varEditState.name.trim() || varEditState.color.split('/')[0];
+                  if (varEditState.mode === 'edit' && varEditState.id) {
+                    await cvUpdate(varEditState.id, { name, value: varEditState.color });
+                    setVarEditState(null);
+                  } else if (varEditState.mode === 'create') {
+                    const result = await cvCreate(name, varEditState.color);
+                    if (result) {
+                      const tab = tabBeforeVarEdit.current || activeTab;
+                      const stop = stopBeforeVarEdit.current || selectedStopId;
+                      if ((tab === 'linear' || tab === 'radial') && stop) {
+                        updateColorStop(tab, stop, { color: `var(--${result.id})` });
+                      } else {
+                        immediateOnChange(`color:var(--${result.id})`);
+                      }
+                    }
+                    setVarEditState(null);
+                  }
+                }
               }}
             />
           ) : !solidOnly && (
