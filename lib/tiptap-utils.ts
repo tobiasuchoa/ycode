@@ -185,6 +185,29 @@ export function hasLinkOrComponent(node: any): boolean {
   return false;
 }
 
+/** Extract the first CMS field binding from Tiptap JSON content (dynamicVariable node with type 'field'). */
+export function getCmsFieldBinding(node: any): { field_id: string; label?: string; source?: 'page' | 'collection'; collection_layer_id?: string } | null {
+  if (!node || typeof node !== 'object') return null;
+  if (node.type === 'dynamicVariable') {
+    const variable = node.attrs?.variable;
+    if (variable?.type === 'field' && variable.data?.field_id) {
+      return {
+        field_id: variable.data.field_id,
+        label: node.attrs?.label,
+        source: variable.data.source,
+        collection_layer_id: variable.data.collection_layer_id,
+      };
+    }
+  }
+  if (Array.isArray(node.content)) {
+    for (const child of node.content) {
+      const result = getCmsFieldBinding(child);
+      if (result) return result;
+    }
+  }
+  return null;
+}
+
 /** Check if Tiptap JSON content contains components or inline variables (non-editable on canvas). */
 export function hasComponentOrVariable(node: any): boolean {
   if (!node || typeof node !== 'object') return false;

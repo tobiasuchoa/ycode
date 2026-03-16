@@ -357,12 +357,15 @@ export default function ComponentVariablesDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="gap-0 pb-0 sm:max-w-xl" aria-describedby={undefined}>
+      <DialogContent
+        className="gap-0 overflow-hidden p-0 sm:max-w-xl h-[85vh] max-h-[85vh]"
+        aria-describedby={undefined}
+      >
         <DialogTitle className="sr-only">Component Variables</DialogTitle>
-        <div className="flex -mx-6 -mt-6 min-h-130">
+        <div className="flex h-full min-h-0">
           {/* Left sidebar - variable list */}
-          <div className="w-60 border-r border-border noscrollbar overflow-y-auto px-5 flex flex-col">
-            <header className="py-5 flex justify-between shrink-0">
+          <div className="w-60 border-r border-border flex min-h-0 flex-col px-5">
+            <header className="flex shrink-0 justify-between py-5">
               <span className="font-medium">Component variables</span>
               <div className="-my-1">
                 <DropdownMenu>
@@ -402,7 +405,7 @@ export default function ComponentVariablesDialog({
             </header>
 
             {/* Variable list */}
-            <div className="flex flex-col gap-0.5">
+            <div className="noscrollbar min-h-0 flex-1 overflow-y-auto">
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}
@@ -426,7 +429,7 @@ export default function ComponentVariablesDialog({
               </DndContext>
 
               {textVariables.length === 0 && (
-                <p className="text-xs text-muted-foreground py-2">
+                <p className="py-2 text-xs text-muted-foreground">
                   No variables yet. Click + to add one.
                 </p>
               )}
@@ -434,7 +437,7 @@ export default function ComponentVariablesDialog({
           </div>
 
           {/* Right panel - variable editor */}
-          <div className="flex-1 p-6 pt-14 flex flex-col gap-3">
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-6 pt-14">
             {selectedVariable ? (
               <>
                 <div className="grid grid-cols-3">

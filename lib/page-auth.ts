@@ -1,4 +1,3 @@
-import { cookies } from 'next/headers';
 import type { Page, PageFolder } from '@/types';
 import { createHmac, randomUUID } from 'crypto';
 import { getSupabaseAdmin } from '@/lib/supabase-server';
@@ -8,6 +7,7 @@ import { getSupabaseAdmin } from '@/lib/supabase-server';
  *
  * Handles password-based access control for pages and folders.
  * Uses session cookies to track which pages/folders have been unlocked.
+ * Uses dynamic import for cookies() to avoid tainting the module as dynamic.
  */
 
 /** Cookie name for page authentication - exported for use in API routes */
@@ -66,6 +66,7 @@ interface PageAuthCookie {
  */
 export async function parseAuthCookie(): Promise<PageAuthCookie | null> {
   try {
+    const { cookies } = await import('next/headers');
     const cookieStore = await cookies();
     const cookie = cookieStore.get(PAGE_AUTH_COOKIE_NAME);
 

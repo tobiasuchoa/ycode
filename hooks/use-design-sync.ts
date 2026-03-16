@@ -142,11 +142,19 @@ export function useDesignSync({
           activeUIState
         );
 
-        const updatedTextStyle = {
+        const updatedTextStyle: Record<string, unknown> = {
           ...currentTextStyle,
           design: updatedDesign,
           classes: updatedClasses.join(' '),
         };
+
+        // Track overrides when a layer style is applied to this text style
+        if (currentTextStyle.styleId) {
+          updatedTextStyle.styleOverrides = {
+            classes: updatedClasses.join(' '),
+            design: updatedDesign,
+          };
+        }
 
         const textStylesUpdate = {
           ...currentTextStyles,
@@ -236,6 +244,7 @@ export function useDesignSync({
   /**
    * Update multiple design properties at once
    * Applies breakpoint-aware class prefixes based on active viewport
+   * Supports text style mode (updates layer.textStyles[key] instead of layer)
    */
   const updateDesignProperties = useCallback(
     (updates: {
@@ -246,6 +255,61 @@ export function useDesignSync({
       const currentLayer = layerRef.current;
       if (!currentLayer) return;
 
+      // Text Style Mode: batch-update layer.textStyles[key]
+      if (isTextStyleMode && activeTextStyleKey) {
+        const currentTextStyles = currentLayer.textStyles ?? { ...DEFAULT_TEXT_STYLES };
+        const currentTextStyle = currentTextStyles[activeTextStyleKey] || {};
+        const currentDesign = currentTextStyle.design || {};
+        const updatedDesign = { ...currentDesign };
+
+        let currentClasses = (currentTextStyle.classes || '').split(' ').filter(Boolean);
+
+        updates.forEach(({ category, property, value }) => {
+          const categoryData = updatedDesign[category] || {};
+          updatedDesign[category] = {
+            ...categoryData,
+            [property]: value,
+            isActive: true,
+          };
+
+          if (!value) {
+            delete updatedDesign[category]![property as keyof typeof categoryData];
+          }
+
+          const newClass = value ? propertyToClass(category, property, value) : null;
+          currentClasses = setBreakpointClass(
+            currentClasses,
+            property,
+            newClass,
+            activeBreakpoint,
+            activeUIState
+          );
+        });
+
+        const updatedTextStyle: Record<string, unknown> = {
+          ...currentTextStyle,
+          design: updatedDesign,
+          classes: currentClasses.join(' '),
+        };
+
+        if (currentTextStyle.styleId) {
+          updatedTextStyle.styleOverrides = {
+            classes: currentClasses.join(' '),
+            design: updatedDesign,
+          };
+        }
+
+        const textStylesUpdate = {
+          ...currentTextStyles,
+          [activeTextStyleKey]: updatedTextStyle,
+        };
+
+        layerRef.current = { ...currentLayer, textStyles: textStylesUpdate };
+        onLayerUpdate(currentLayer.id, { textStyles: textStylesUpdate });
+        return;
+      }
+
+      // Normal Mode: update layer directly
       let currentClasses = Array.isArray(currentLayer.classes)
         ? [...currentLayer.classes]
         : (currentLayer.classes || '').split(' ').filter(Boolean);
@@ -253,9 +317,7 @@ export function useDesignSync({
       const currentDesign = currentLayer.design || {};
       const updatedDesign = { ...currentDesign };
 
-      // Process all updates
       updates.forEach(({ category, property, value }) => {
-        // Update design object
         const categoryData = updatedDesign[category] || {};
         updatedDesign[category] = {
           ...categoryData,
@@ -267,7 +329,6 @@ export function useDesignSync({
           delete updatedDesign[category]![property as keyof typeof categoryData];
         }
 
-        // Update classes with breakpoint and UI state awareness
         const newClass = value ? propertyToClass(category, property, value) : null;
         currentClasses = setBreakpointClass(
           currentClasses,
@@ -280,22 +341,18 @@ export function useDesignSync({
 
       const classesString = currentClasses.join(' ');
 
-      // Optimistically update the ref
       layerRef.current = {
         ...currentLayer,
         design: updatedDesign,
         classes: classesString,
       };
 
-      // Apply all updates at once
-      // Note: Use join instead of cn() because setBreakpointClass already handles
-      // property-aware conflict resolution
       onLayerUpdate(currentLayer.id, {
         design: updatedDesign,
         classes: classesString,
       });
     },
-    [onLayerUpdate, activeBreakpoint, activeUIState]
+    [onLayerUpdate, activeBreakpoint, activeUIState, isTextStyleMode, activeTextStyleKey]
   );
 
   /**

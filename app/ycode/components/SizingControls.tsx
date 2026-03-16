@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, memo } from 'react';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup, ButtonGroupSeparator } from '@/components/ui/button-group';
 import {
@@ -29,7 +29,7 @@ interface SizingControlsProps {
   onLayerUpdate: (layerId: string, updates: Partial<Layer>) => void;
 }
 
-export default function SizingControls({ layer, onLayerUpdate }: SizingControlsProps) {
+const SizingControls = memo(function SizingControls({ layer, onLayerUpdate }: SizingControlsProps) {
   const { activeBreakpoint, activeUIState } = useEditorStore();
   const { updateDesignProperty, debouncedUpdateDesignProperty, getDesignProperty } = useDesignSync({
     layer,
@@ -675,4 +675,5 @@ export default function SizingControls({ layer, onLayerUpdate }: SizingControlsP
 
     </SettingsPanel>
   );
-}
+});
+export default SizingControls;

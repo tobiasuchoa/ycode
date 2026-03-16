@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, memo } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,7 @@ import { useDesignSync } from '@/hooks/use-design-sync';
 import { useControlledInputs } from '@/hooks/use-controlled-input';
 import { useModeToggle } from '@/hooks/use-mode-toggle';
 import { useEditorStore } from '@/stores/useEditorStore';
+import { useColorVariablesStore } from '@/stores/useColorVariablesStore';
 import { extractMeasurementValue } from '@/lib/measurement-utils';
 import { cn, removeSpaces } from '@/lib/utils';
 import ColorPropertyField from '@/app/ycode/components/ColorPropertyField';
@@ -35,8 +36,24 @@ interface BorderControlsProps {
   collections?: Collection[];
 }
 
-function parseBorderColorToCss(color: string): string {
+function hexToRgba(value: string): string {
+  const parts = value.split('/');
+  if (parts.length < 2) return value;
+  const hex = parts[0];
+  const opacity = parseInt(parts[1]) / 100;
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${opacity})`;
+}
+
+function parseBorderColorToCss(color: string, colorVariables?: import('@/types').ColorVariable[]): string {
   if (!color) return '#000000';
+  const varMatch = color.match(/^color:var\(--(.+)\)$/);
+  if (varMatch && colorVariables) {
+    const variable = colorVariables.find((v) => v.id === varMatch[1]);
+    return variable ? hexToRgba(variable.value) : '#000000';
+  }
   const match = color.match(/^(#[0-9a-fA-F]{6})\/(\d+)$/);
   if (match) {
     const hex = match[1];
@@ -49,8 +66,9 @@ function parseBorderColorToCss(color: string): string {
   return color;
 }
 
-export default function BorderControls({ layer, onLayerUpdate, activeTextStyleKey, fieldGroups, allFields, collections }: BorderControlsProps) {
+const BorderControls = memo(function BorderControls({ layer, onLayerUpdate, activeTextStyleKey, fieldGroups, allFields, collections }: BorderControlsProps) {
   const { activeBreakpoint, activeUIState } = useEditorStore();
+  const colorVariables = useColorVariablesStore((s) => s.colorVariables);
   const { updateDesignProperty, updateDesignProperties, debouncedUpdateDesignProperty, getDesignProperty } = useDesignSync({
     layer,
     onLayerUpdate,
@@ -408,7 +426,7 @@ export default function BorderControls({ layer, onLayerUpdate, activeTextStyleKe
                   >
                       <div className="flex items-center gap-2">
                         <div className="size-5 rounded-[6px] shrink-0 -ml-1 relative overflow-hidden outline dark:outline-white/10 outline-offset-[-1px]">
-                          <div className="absolute inset-0 z-20" style={{ background: parseBorderColorToCss(borderColor) }} />
+                          <div className="absolute inset-0 z-20" style={{ background: parseBorderColorToCss(borderColor, colorVariables) }} />
                           <div className="absolute inset-0 opacity-15 bg-checkerboard bg-background z-10" />
                         </div>
                         <Label variant="muted" className="capitalize">{borderStyle || 'Solid'}</Label>
@@ -666,4 +684,5 @@ export default function BorderControls({ layer, onLayerUpdate, activeTextStyleKe
 
     </div>
   );
-}
+});
+export default BorderControls;

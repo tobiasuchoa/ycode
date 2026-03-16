@@ -10,6 +10,18 @@ export interface FlattenedItem {
   index: number;
   collapsed?: boolean;
   canHaveChildren: boolean;
+  /** Sublayer metadata (richText content blocks, text style targets, or list items) */
+  sublayer?: {
+    type: string;
+    label: string;
+    icon: string;
+    /** 'content' = actual TipTap block, 'style' = text style target, 'listItem' = individual list entry */
+    kind: 'content' | 'style' | 'listItem';
+    /** For style sublayers: the textStyles key */
+    styleKey?: string;
+    /** For listItem sublayers: 0-based index within the parent list */
+    itemIndex?: number;
+  };
 }
 
 /**

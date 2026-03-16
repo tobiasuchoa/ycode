@@ -193,6 +193,7 @@ async function fetchCachedGlobalSettings() {
       globalCanonicalUrl: null,
       gaMeasurementId: null,
       publishedCss: null,
+      colorVariablesCss: null,
       globalCustomCodeHead: null,
       globalCustomCodeBody: null,
       ycodeBadge: true,
@@ -271,6 +272,7 @@ export default async function Page({ params }: PageProps) {
           layers={errorPageLayers.layers || []}
           components={errorComponents}
           generatedCss={globalSettings.publishedCss || undefined}
+          globalCustomCodeHead={globalSettings.globalCustomCodeHead}
           globalCustomCodeBody={globalSettings.globalCustomCodeBody}
         />
       );
@@ -305,6 +307,7 @@ export default async function Page({ params }: PageProps) {
             layers={errorPageLayers.layers || []}
             components={errorComponents}
             generatedCss={globalSettings.publishedCss || undefined}
+            globalCustomCodeHead={globalSettings.globalCustomCodeHead}
             globalCustomCodeBody={globalSettings.globalCustomCodeBody}
             passwordProtection={{
               pageId: protection.protectedBy === 'page' ? protection.protectedById : undefined,
@@ -341,12 +344,14 @@ export default async function Page({ params }: PageProps) {
       layers={pageLayers.layers || []}
       components={components}
       generatedCss={globalSettings.publishedCss || undefined}
+      colorVariablesCss={globalSettings.colorVariablesCss || undefined}
       collectionItem={collectionItem}
       collectionFields={collectionFields}
       locale={locale}
       availableLocales={availableLocales}
       translations={translations}
       gaMeasurementId={globalSettings.gaMeasurementId}
+      globalCustomCodeHead={globalSettings.globalCustomCodeHead}
       globalCustomCodeBody={globalSettings.globalCustomCodeBody}
       ycodeBadge={globalSettings.ycodeBadge}
     />

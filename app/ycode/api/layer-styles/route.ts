@@ -37,6 +37,7 @@ export async function POST(request: NextRequest) {
       name: body.name,
       classes: body.classes,
       design: body.design,
+      group: body.group,
     });
     
     return NextResponse.json({ data: style }, { status: 201 });

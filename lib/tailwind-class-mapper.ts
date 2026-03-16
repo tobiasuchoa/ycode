@@ -77,10 +77,38 @@ export function extractBgImgVarName(cls: string): string | null {
 }
 
 /**
+ * Split a class string on spaces, but preserve spaces inside brackets.
+ * e.g., "bg-[url('foo bar')] text-sm" → ["bg-[url('foo bar')]", "text-sm"]
+ */
+function splitClassesPreservingBrackets(cls: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  let bracketDepth = 0;
+
+  for (const char of cls) {
+    if (char === '[') bracketDepth++;
+    if (char === ']') bracketDepth--;
+
+    if (char === ' ' && bracketDepth === 0) {
+      if (current) result.push(current);
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+
+  if (current) result.push(current);
+  return result;
+}
+
+/**
  * Helper: Check if a value looks like a color (hex, rgb, rgba, hsl, hsla, or color name)
  * Used to distinguish between text-[color] and text-[size] arbitrary values
  */
 function isColorValue(value: string): boolean {
+  // Check for CSS custom property color references: color:var(--...)
+  if (/^color:var\(--/.test(value)) return true;
+
   // Check for hex colors (with or without #)
   // Supports: #RGB, RGB, #RRGGBB, RRGGBB, #RRGGBBAA, RRGGBBAA
   if (/^#?[0-9A-Fa-f]{3}$/.test(value)) return true; // #RGB or RGB
@@ -243,13 +271,13 @@ const CLASS_PROPERTY_MAP: Record<string, RegExp> = {
   backgroundClip: /^bg-clip-(text|border|padding|content)$/,
 
   // Borders
-  borderWidth: /^border(-\d+|-\[(?!#|rgb).+\])?$/,
-  borderTopWidth: /^border-t(-\d+|-\[(?!#|rgb).+\])?$/,
-  borderRightWidth: /^border-r(-\d+|-\[(?!#|rgb).+\])?$/,
-  borderBottomWidth: /^border-b(-\d+|-\[(?!#|rgb).+\])?$/,
-  borderLeftWidth: /^border-l(-\d+|-\[(?!#|rgb).+\])?$/,
+  borderWidth: /^border(-\d+|-\[(?!#|rgb|color:var).+\])?$/,
+  borderTopWidth: /^border-t(-\d+|-\[(?!#|rgb|color:var).+\])?$/,
+  borderRightWidth: /^border-r(-\d+|-\[(?!#|rgb|color:var).+\])?$/,
+  borderBottomWidth: /^border-b(-\d+|-\[(?!#|rgb|color:var).+\])?$/,
+  borderLeftWidth: /^border-l(-\d+|-\[(?!#|rgb|color:var).+\])?$/,
   borderStyle: /^border-(solid|dashed|dotted|double|hidden|none)$/,
-  borderColor: /^border-(?!(?:solid|dashed|dotted|double|hidden|none)$)(?!t-|r-|b-|l-|x-|y-)((\w+)(-\d+)?|\[(?:#|rgb).+\])(\/\d+)?$/,
+  borderColor: /^border-(?!(?:solid|dashed|dotted|double|hidden|none)$)(?!t-|r-|b-|l-|x-|y-)((\w+)(-\d+)?|\[(?:#|rgb|color:var).+\])(\/\d+)?$/,
   borderRadius: /^rounded(-none|-sm|-md|-lg|-xl|-2xl|-3xl|-full|-\[.+\])?$/,
   borderTopLeftRadius: /^rounded-tl(-none|-sm|-md|-lg|-xl|-2xl|-3xl|-full|-\[.+\])?$/,
   borderTopRightRadius: /^rounded-tr(-none|-sm|-md|-lg|-xl|-2xl|-3xl|-full|-\[.+\])?$/,
@@ -257,10 +285,10 @@ const CLASS_PROPERTY_MAP: Record<string, RegExp> = {
   borderBottomLeftRadius: /^rounded-bl(-none|-sm|-md|-lg|-xl|-2xl|-3xl|-full|-\[.+\])?$/,
 
   // Dividers
-  divideX: /^divide-x(-\d+|-\[(?!#|rgb).+\])?$/,
-  divideY: /^divide-y(-\d+|-\[(?!#|rgb).+\])?$/,
+  divideX: /^divide-x(-\d+|-\[(?!#|rgb|color:var).+\])?$/,
+  divideY: /^divide-y(-\d+|-\[(?!#|rgb|color:var).+\])?$/,
   divideStyle: /^divide-(solid|dashed|dotted|double|none)$/,
-  divideColor: /^divide-((\w+)(-\d+)?|\[(?:#|rgb).+\])(\/\d+)?$/,
+  divideColor: /^divide-((\w+)(-\d+)?|\[(?:#|rgb|color:var).+\])(\/\d+)?$/,
 
   // Effects
   opacity: /^opacity-(\d+|\[.+\])$/,
@@ -468,7 +496,7 @@ export function propertyToClass(
   if (category === 'layout') {
     switch (property) {
       case 'display':
-        return value; // Already a valid class: 'flex', 'grid', 'block', etc.
+        return value.toLowerCase();
       case 'flexDirection':
         if (value === 'row') return 'flex-row';
         if (value === 'column') return 'flex-col';
@@ -480,12 +508,33 @@ export function propertyToClass(
         if (value === 'nowrap') return 'flex-nowrap';
         if (value === 'wrap-reverse') return 'flex-wrap-reverse';
         return null;
-      case 'justifyContent':
-        return `justify-${value}`;
-      case 'alignItems':
-        return `items-${value}`;
-      case 'alignContent':
-        return `content-${value}`;
+      case 'justifyContent': {
+        const justifyMap: Record<string, string> = {
+          'flex-start': 'start',
+          'flex-end': 'end',
+          'space-between': 'between',
+          'space-around': 'around',
+          'space-evenly': 'evenly',
+        };
+        return `justify-${justifyMap[value] || value}`;
+      }
+      case 'alignItems': {
+        const itemsMap: Record<string, string> = {
+          'flex-start': 'start',
+          'flex-end': 'end',
+        };
+        return `items-${itemsMap[value] || value}`;
+      }
+      case 'alignContent': {
+        const contentMap: Record<string, string> = {
+          'flex-start': 'start',
+          'flex-end': 'end',
+          'space-between': 'between',
+          'space-around': 'around',
+          'space-evenly': 'evenly',
+        };
+        return `content-${contentMap[value] || value}`;
+      }
       case 'gap':
         return formatMeasurementClass(value, 'gap');
       case 'columnGap':
@@ -533,6 +582,12 @@ export function propertyToClass(
         if (value === 'none') return 'no-underline';
         return value; // underline, line-through, overline
       case 'textDecorationColor': {
+        if (value.startsWith('color:var(')) {
+          return `decoration-[${value}]`;
+        }
+        if (value.startsWith('var(')) {
+          return `decoration-[color:${value}]`;
+        }
         if (value.match(/^#|^rgb|^hsl/)) {
           const parts = value.split('/');
           if (parts.length === 2) {
@@ -549,9 +604,13 @@ export function propertyToClass(
       case 'color':
         // Check if value is a gradient (linear-gradient or radial-gradient)
         if (value.includes('gradient(')) {
-          // For gradients on text, we need bg-[gradient] + bg-clip-text + text-transparent
-          // Note: This returns space-separated classes that will be split by the caller
           return `bg-[${value}] bg-clip-text text-transparent`;
+        }
+        if (value.startsWith('color:var(')) {
+          return `text-[${value}]`;
+        }
+        if (value.startsWith('var(')) {
+          return `text-[color:${value}]`;
         }
         if (value.match(/^#|^rgb/)) {
           // Handle opacity: split "#cc8d8d/59" into "text-[#cc8d8d]/59"
@@ -563,6 +622,12 @@ export function propertyToClass(
         }
         return `text-${value}`;
       case 'placeholderColor':
+        if (value.startsWith('color:var(')) {
+          return `placeholder:text-[${value}]`;
+        }
+        if (value.startsWith('var(')) {
+          return `placeholder:text-[color:${value}]`;
+        }
         if (value.match(/^#|^rgb/)) {
           const parts = value.split('/');
           if (parts.length === 2) {
@@ -667,6 +732,12 @@ export function propertyToClass(
       case 'borderStyle':
         return `border-${value}`;
       case 'borderColor':
+        if (value.startsWith('color:var(')) {
+          return `border-[${value}]`;
+        }
+        if (value.startsWith('var(')) {
+          return `border-[color:${value}]`;
+        }
         if (value.match(/^#|^rgb/)) {
           // Handle opacity: split "#cc8d8d/59" into "border-[#cc8d8d]/59"
           const parts = value.split('/');
@@ -695,6 +766,12 @@ export function propertyToClass(
       case 'divideStyle':
         return `divide-${value}`;
       case 'divideColor':
+        if (value.startsWith('color:var(')) {
+          return `divide-[${value}]`;
+        }
+        if (value.startsWith('var(')) {
+          return `divide-[color:${value}]`;
+        }
         if (value.match(/^#|^rgb/)) {
           // Handle opacity: split "#cc8d8d/59" into "divide-[#cc8d8d]/59"
           const parts = value.split('/');
@@ -711,6 +788,12 @@ export function propertyToClass(
   if (category === 'backgrounds') {
     switch (property) {
       case 'backgroundColor':
+        if (value.startsWith('color:var(')) {
+          return `bg-[${value}]`;
+        }
+        if (value.startsWith('var(')) {
+          return `bg-[color:${value}]`;
+        }
         // Gradients and hex/rgb colors need brackets for arbitrary values
         if (value.match(/^#|^rgb|gradient\(/)) {
           // Handle opacity: split "#cc8d8d/59" into "bg-[#cc8d8d]/59"
@@ -752,7 +835,7 @@ export function propertyToClass(
         if (['sm', 'md', 'lg', 'xl', '2xl', 'inner'].includes(value)) {
           return `shadow-${value}`;
         }
-        return `shadow-[${value}]`;
+        return `shadow-[${value.replace(/\s+/g, '_')}]`;
       case 'blur':
         if (value === 'none') return 'blur-none';
         if (['sm', 'md', 'lg', 'xl', '2xl', '3xl'].includes(value)) {
@@ -810,7 +893,8 @@ export function designToClasses(design?: Layer['design']): string[] {
 
       if (cls) {
         // Handle multiple space-separated classes (e.g., for text gradients)
-        const clsList = cls.split(' ').filter(Boolean);
+        // Split only on spaces outside of brackets to preserve arbitrary values
+        const clsList = splitClassesPreservingBrackets(cls);
         classes.push(...clsList);
       }
     });
@@ -1372,7 +1456,7 @@ export function classesToDesign(classes: string | string[]): Layer['design'] {
     if (cls === 'border-none') design.borders!.borderStyle = 'none';
 
     // Border Color
-    if (cls.startsWith('border-[#') || cls.startsWith('border-[rgb')) {
+    if (cls.startsWith('border-[#') || cls.startsWith('border-[rgb') || cls.startsWith('border-[color:var(')) {
       const value = extractArbitraryValueWithOpacity(cls);
       if (value) design.borders!.borderColor = value;
     }
@@ -1401,14 +1485,14 @@ export function classesToDesign(classes: string | string[]): Layer['design'] {
     if (cls === 'divide-none') design.borders!.divideStyle = 'none';
 
     // Divide Color
-    if (cls.startsWith('divide-[#') || cls.startsWith('divide-[rgb')) {
+    if (cls.startsWith('divide-[#') || cls.startsWith('divide-[rgb') || cls.startsWith('divide-[color:var(')) {
       const value = extractArbitraryValueWithOpacity(cls);
       if (value) design.borders!.divideColor = value;
     }
 
     // ===== BACKGROUNDS =====
     // Background Color
-    if (cls.startsWith('bg-[#') || cls.startsWith('bg-[rgb')) {
+    if (cls.startsWith('bg-[#') || cls.startsWith('bg-[rgb') || cls.startsWith('bg-[color:var(')) {
       const value = extractArbitraryValueWithOpacity(cls);
       if (value) design.backgrounds!.backgroundColor = value;
     }

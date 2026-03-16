@@ -136,7 +136,7 @@ export default function ApiPage() {
     <div className="p-8">
       <div className="max-w-3xl mx-auto">
 
-        <header className="pt-8 pb-3 flex items-center justify-between">
+        <header className="pt-8 pb-6 flex items-center justify-between">
           <span className="text-base font-medium">API</span>
           <Button
             variant="secondary"

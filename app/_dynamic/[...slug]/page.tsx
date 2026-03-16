@@ -134,12 +134,14 @@ export default async function DynamicSlugPage({ params, searchParams }: DynamicS
       layers={pageLayers.layers || []}
       components={components}
       generatedCss={globalSettings.publishedCss || undefined}
+      colorVariablesCss={globalSettings.colorVariablesCss || undefined}
       collectionItem={collectionItem}
       collectionFields={collectionFields}
       locale={locale}
       availableLocales={availableLocales}
       translations={translations}
       gaMeasurementId={globalSettings.gaMeasurementId}
+      globalCustomCodeHead={globalSettings.globalCustomCodeHead}
       globalCustomCodeBody={globalSettings.globalCustomCodeBody}
       ycodeBadge={globalSettings.ycodeBadge}
     />

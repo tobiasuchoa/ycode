@@ -4,6 +4,7 @@ import { fetchPageByPath, fetchErrorPage } from '@/lib/page-fetcher';
 import PageRenderer from '@/components/PageRenderer';
 import PasswordForm from '@/components/PasswordForm';
 import { getSettingsByKeys } from '@/lib/repositories/settingsRepository';
+import { generateColorVariablesCss } from '@/lib/repositories/colorVariableRepository';
 
 import { generatePageMetadata } from '@/lib/generate-page-metadata';
 import { parseAuthCookie, getPasswordProtection, fetchFoldersForAuth } from '@/lib/page-auth';
@@ -27,8 +28,11 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
   // Fetch draft page and layers data (no caching)
   const data = await fetchPageByPath(slugPath, false);
 
-  // Fetch draft CSS (global custom code is handled by the preview layout)
-  const draftCSS = await fetchPreviewDraftCss();
+  // Fetch draft CSS and color variables
+  const [draftCSS, colorVariablesCss] = await Promise.all([
+    fetchPreviewDraftCss(),
+    generateColorVariablesCss(),
+  ]);
 
   // If page not found, try to show custom 404 error page
   if (!data) {
@@ -43,6 +47,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
           layers={pageLayers.layers || []}
           components={components}
           generatedCss={draftCSS}
+          colorVariablesCss={colorVariablesCss || undefined}
           isPreview={true}
         />
       );
@@ -72,6 +77,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
           layers={errorPageLayers.layers || []}
           components={errorComponents}
           generatedCss={draftCSS}
+          colorVariablesCss={colorVariablesCss || undefined}
           isPreview={true}
           passwordProtection={{
             pageId: protection.protectedBy === 'page' ? protection.protectedById : undefined,
@@ -108,6 +114,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
       layers={pageLayers.layers || []}
       components={components}
       generatedCss={draftCSS}
+      colorVariablesCss={colorVariablesCss || undefined}
       collectionItem={collectionItem}
       collectionFields={collectionFields}
       locale={locale}

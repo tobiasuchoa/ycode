@@ -15,10 +15,11 @@ export interface IconProps extends React.SVGProps<SVGSVGElement> {
     | 'select' | 'checkbox' | 'radio' | 'zap' | 'zap-outline' | 'loopAlternate' | 'loopRepeat' | 'globe' | 'ease-linear' | 'ease-in' | 'ease-in-out' | 'ease-out' | 'ease-back-in'
     | 'ease-back-in-out' | 'ease-back-out' | 'none' | 'play' | 'stop' | 'info' | 'preview' | 'linear' | 'radial' | 'color' | 'fill-image' | 'eyedrop' | 'calendar' | 'hash'
     | 'paintbrush' | 'swatch' | 'cube' | 'triangle-down' | 'triangle-right' | 'plus-circle' | 'plus-circle-solid' | 'detach' | 'email' | 'phone' | 'paperclip' | 'unlink' | 'map'
-    | 'droplet' | 'expand' | 'collapse' | 'filter' | 'crosshair'
+    | 'paragraph' | 'droplet' | 'expand' | 'collapse' | 'filter' | 'crosshair'
     | 'lightbox'
     | 'slider' | 'slide' | 'slides' | 'slide-button-prev' | 'slide-button-next' | 'slide-bullets' | 'slide-bullet' | 'slide-navigation' | 'slide-fraction'
     | 'loop-alternate' | 'loop-repeat'
+    | 'listItem'
   );
 }
 
@@ -340,6 +341,12 @@ const ICONS: Record<IconProps['name'], React.ReactNode> = {
       <path xmlns="http://www.w3.org/2000/svg" d="M3.33333333,0.833333333 L12,0.833333333 L12,2.16666667 L3.33333333,2.16666667 L3.33333333,0.833333333 Z M1,2.5 C0.447713333,2.5 0,2.05228667 0,1.5 C0,0.947713333 0.447713333,0.5 1,0.5 C1.55228667,0.5 2,0.947713333 2,1.5 C2,2.05228667 1.55228667,2.5 1,2.5 Z M1,7.16666667 C0.447713333,7.16666667 0,6.71893333 0,6.16666667 C0,5.6144 0.447713333,5.16666667 1,5.16666667 C1.55228667,5.16666667 2,5.6144 2,6.16666667 C2,6.71893333 1.55228667,7.16666667 1,7.16666667 Z M1,11.7666667 C0.447713333,11.7666667 0,11.3189333 0,10.7666667 C0,10.2144 0.447713333,9.76666667 1,9.76666667 C1.55228667,9.76666667 2,10.2144 2,10.7666667 C2,11.3189333 1.55228667,11.7666667 1,11.7666667 Z M3.33333333,5.5 L12,5.5 L12,6.83333333 L3.33333333,6.83333333 L3.33333333,5.5 Z M3.33333333,10.1666667 L12,10.1666667 L12,11.5 L3.33333333,11.5 L3.33333333,10.1666667 Z" />
     </>
   ),
+  listItem: (
+    <>
+      <path d="M1,7 C0.447715,7 0,6.55228 0,6 C0,5.44772 0.447715,5 1,5 C1.55228,5 2,5.44772 2,6 C2,6.55228 1.55228,7 1,7 Z" />
+      <path d="M3.5,3 L11.5,3 L11.5,4.25 L3.5,4.25 L3.5,3 Z M3.5,5.375 L11.5,5.375 L11.5,6.625 L3.5,6.625 L3.5,5.375 Z M3.5,7.75 L8.5,7.75 L8.5,9 L3.5,9 L3.5,7.75 Z" />
+    </>
+  ),
   italic: (
     <>
       <path d="M11.5,0 C11.7761424,0 12,0.223857625 12,0.5 C12,0.745459889 11.8231248,0.94960837 11.5898756,0.991944331 L11.5,1 L9.075,1 L5.325,11 L7.5,11 C7.77614237,11 8,11.2238576 8,11.5 C8,11.7454599 7.82312484,11.9496084 7.58987563,11.9919443 L7.5,12 L1.5,12 C1.22385763,12 1,11.7761424 1,11.5 C1,11.2545401 1.17687516,11.0503916 1.41012437,11.0080557 L1.5,11 L4.257,11 L8.007,1 L5.5,1 C5.22385763,1 5,0.776142375 5,0.5 C5,0.254540111 5.17687516,0.0503916296 5.41012437,0.00805566941 L5.5,0 L11.5,0 Z" />
@@ -589,6 +596,11 @@ const ICONS: Record<IconProps['name'], React.ReactNode> = {
   text: (
     <>
       <path d="M0,1 L0,0 L12,0 L12,1 L6.5,1 L6.5,12 L5.5,12 L5.5,1 L0,1 Z" />
+    </>
+  ),
+  paragraph: (
+    <>
+      <path d="M0,10 L6,10 L6,11 L0,11 L0,10 Z M0,1 L12,1 L12,2 L0,2 L0,1 Z M0,4 L12,4 L12,5 L0,5 L0,4 Z M0,7 L12,7 L12,8 L0,8 L0,7 Z" />
     </>
   ),
   layout: (

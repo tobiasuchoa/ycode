@@ -42,62 +42,52 @@ export function getTextStyleLabel(key: string, style?: TextStyle): string {
  * Used in text element templates and can be overridden per layer
  */
 export const DEFAULT_TEXT_STYLES: Record<string, TextStyle> = {
-  // Heading styles (h1-h6) - matching RichTextEditor prose styles
   h1: {
     label: 'Heading 1',
-    classes: 'block text-[30px] font-semibold',
+    classes: 'text-[30px] font-semibold',
     design: {
-      layout: { display: 'block' },
       typography: { fontSize: '30px', fontWeight: 'semibold' },
     },
   },
   h2: {
     label: 'Heading 2',
-    classes: 'block text-[24px] font-semibold',
+    classes: 'text-[24px] font-semibold',
     design: {
-      layout: { display: 'block' },
       typography: { fontSize: '24px', fontWeight: 'semibold' },
     },
   },
   h3: {
     label: 'Heading 3',
-    classes: 'block text-[20px] font-semibold',
+    classes: 'text-[20px] font-semibold',
     design: {
-      layout: { display: 'block' },
       typography: { fontSize: '20px', fontWeight: 'semibold' },
     },
   },
   h4: {
     label: 'Heading 4',
-    classes: 'block text-[18px] font-semibold',
+    classes: 'text-[18px] font-semibold',
     design: {
-      layout: { display: 'block' },
       typography: { fontSize: '18px', fontWeight: 'semibold' },
     },
   },
   h5: {
     label: 'Heading 5',
-    classes: 'block text-[16px] font-semibold',
+    classes: 'text-[16px] font-semibold',
     design: {
-      layout: { display: 'block' },
       typography: { fontSize: '16px', fontWeight: 'semibold' },
     },
   },
   h6: {
     label: 'Heading 6',
-    classes: 'block text-[14px] font-semibold',
+    classes: 'text-[14px] font-semibold',
     design: {
-      layout: { display: 'block' },
       typography: { fontSize: '14px', fontWeight: 'semibold' },
     },
   },
-  // Paragraph style - block display with spacing and line height
   paragraph: {
     label: 'Paragraph',
-    classes: 'block',
-    design: {
-      layout: { display: 'block' },
-    },
+    classes: '',
+    design: {},
   },
   // Inline formatting marks
   bold: {
@@ -180,6 +170,23 @@ export const DEFAULT_TEXT_STYLES: Record<string, TextStyle> = {
     label: 'List Item',
     classes: '',
   },
+  blockquote: {
+    label: 'Blockquote',
+    classes: 'border-l-[3px] border-current/20 pl-[16px]',
+    design: {
+      borders: { borderLeftWidth: '3px' },
+      spacing: { paddingLeft: '16px' },
+    },
+  },
+  richTextImage: {
+    label: 'Image',
+    classes: 'block max-w-full h-auto rounded-[4px]',
+    design: {
+      layout: { display: 'block' },
+      sizing: { maxWidth: '100%', height: 'auto' },
+      borders: { borderRadius: '4px' },
+    },
+  },
 };
 
 /**
@@ -225,6 +232,33 @@ export function getTiptapTextContent(text: string): {
         content: text ? [{ type: 'text', text }] : [],
       },
     ],
+  };
+}
+
+/**
+ * Flatten multi-paragraph Tiptap content into a single paragraph with hardBreak nodes.
+ * Used for heading/text elements that should not contain nested block elements.
+ * Converts: [paragraph("a"), paragraph("b")] → [paragraph("a", hardBreak, "b")]
+ */
+export function flattenTiptapParagraphs(content: any): any {
+  if (!content || typeof content !== 'object' || content.type !== 'doc') return content;
+  const blocks = content.content;
+  if (!Array.isArray(blocks) || blocks.length <= 1) return content;
+
+  const merged: any[] = [];
+  blocks.forEach((block: any, i: number) => {
+    if (block.type !== 'paragraph') return;
+    if (i > 0 && merged.length > 0) {
+      merged.push({ type: 'hardBreak' });
+    }
+    if (block.content && Array.isArray(block.content)) {
+      merged.push(...block.content);
+    }
+  });
+
+  return {
+    type: 'doc',
+    content: [{ type: 'paragraph', content: merged }],
   };
 }
 
@@ -496,21 +530,9 @@ function renderNestedRichTextContent(
           if (isEditMode) {
             listProps['data-style'] = block.type;
           }
-          const items = block.content?.map((item: any, itemIdx: number) => {
-            const itemClass = textStyles?.listItem?.classes ??
-              DEFAULT_TEXT_STYLES.listItem?.classes ?? '';
-            const itemContent = item.content?.flatMap((itemBlock: any) => {
-              if (itemBlock.type === 'paragraph' && itemBlock.content) {
-                return renderInlineContent(itemBlock.content, collectionItemData, pageCollectionItemData, textStyles, isEditMode, linkContext, timezone, layerDataMap, components, renderComponentBlock, ancestorComponentIds);
-              }
-              return [];
-            }) || [];
-            const itemProps: Record<string, any> = { key: `${blockKey}-item-${itemIdx}`, className: itemClass };
-            if (isEditMode) {
-              itemProps['data-style'] = 'listItem';
-            }
-            return React.createElement('li', itemProps, ...itemContent);
-          }) || [];
+          const items = block.content?.map((item: any, itemIdx: number) =>
+            renderListItem(item, `${blockKey}-${itemIdx}`, collectionItemData, pageCollectionItemData, textStyles, isEditMode, linkContext, timezone, layerDataMap, components, renderComponentBlock, ancestorComponentIds, itemIdx)
+          ) || [];
           return React.createElement(tag, listProps, ...items);
         }
 
@@ -636,6 +658,10 @@ function renderInlineContent(
       return rendered ? [rendered] : [];
     }
 
+    if (node.type === 'hardBreak') {
+      return [React.createElement('br', { key })];
+    }
+
     // Handle list nodes that were preserved during flattening
     if (node.type === 'bulletList' || node.type === 'orderedList') {
       const listClass = textStyles?.[node.type]?.classes ??
@@ -645,21 +671,9 @@ function renderInlineContent(
       if (isEditMode) {
         listProps['data-style'] = node.type;
       }
-      const items = node.content?.map((item: any, itemIdx: number) => {
-        const itemClass = textStyles?.listItem?.classes ??
-          DEFAULT_TEXT_STYLES.listItem?.classes ?? '';
-        const itemContent = item.content?.flatMap((itemBlock: any) => {
-          if (itemBlock.type === 'paragraph' && itemBlock.content) {
-            return renderInlineContent(itemBlock.content, collectionItemData, pageCollectionItemData, textStyles, isEditMode, linkContext, timezone, layerDataMap, components, renderComponentBlock, ancestorComponentIds);
-          }
-          return [];
-        }) || [];
-        const itemProps: Record<string, any> = { key: `${key}-item-${itemIdx}`, className: itemClass };
-        if (isEditMode) {
-          itemProps['data-style'] = 'listItem';
-        }
-        return React.createElement('li', itemProps, ...itemContent);
-      }) || [];
+      const items = node.content?.map((item: any, itemIdx: number) =>
+        renderListItem(item, `${key}-${itemIdx}`, collectionItemData, pageCollectionItemData, textStyles, isEditMode, linkContext, timezone, layerDataMap, components, renderComponentBlock, ancestorComponentIds, itemIdx)
+      ) || [];
       return [React.createElement(tag, listProps, ...items)];
     }
 
@@ -754,11 +768,15 @@ function renderBlock(
 
   if (block.type === 'paragraph') {
     const paragraphClass = getTextStyleClasses(textStyles, 'paragraph');
+    const paragraphProps: Record<string, any> = { key, className: paragraphClass };
+    if (isEditMode) {
+      paragraphProps['data-style'] = 'paragraph';
+    }
 
     // Empty paragraphs use non-breaking space to preserve the empty line
     if (!block.content || block.content.length === 0) {
       const emptyTag = useSpanForParagraphs ? 'span' : 'p';
-      return React.createElement(emptyTag, { key, className: paragraphClass }, '\u00A0');
+      return React.createElement(emptyTag, paragraphProps, '\u00A0');
     }
 
     // Use div when paragraph contains block-level content (rich_text variables or embedded components)
@@ -768,7 +786,7 @@ function renderBlock(
     );
     const tag = hasBlockContent ? 'div' : useSpanForParagraphs ? 'span' : 'p';
 
-    return React.createElement(tag, { key, className: paragraphClass }, ...renderInlineContent(block.content, collectionItemData, pageCollectionItemData, textStyles, isEditMode, linkContext, timezone, layerDataMap, components, renderComponentBlock, ancestorComponentIds));
+    return React.createElement(tag, paragraphProps, ...renderInlineContent(block.content, collectionItemData, pageCollectionItemData, textStyles, isEditMode, linkContext, timezone, layerDataMap, components, renderComponentBlock, ancestorComponentIds));
   }
 
   if (block.type === 'heading') {
@@ -802,7 +820,7 @@ function renderBlock(
       'ul',
       ulProps,
       block.content?.map((item: any, itemIdx: number) =>
-        renderListItem(item, `${key}-${itemIdx}`, collectionItemData, pageCollectionItemData, textStyles, isEditMode, linkContext, timezone, layerDataMap, components, renderComponentBlock, ancestorComponentIds)
+        renderListItem(item, `${key}-${itemIdx}`, collectionItemData, pageCollectionItemData, textStyles, isEditMode, linkContext, timezone, layerDataMap, components, renderComponentBlock, ancestorComponentIds, itemIdx)
       )
     );
   }
@@ -819,9 +837,42 @@ function renderBlock(
       'ol',
       olProps,
       block.content?.map((item: any, itemIdx: number) =>
-        renderListItem(item, `${key}-${itemIdx}`, collectionItemData, pageCollectionItemData, textStyles, isEditMode, linkContext, timezone, layerDataMap, components, renderComponentBlock, ancestorComponentIds)
+        renderListItem(item, `${key}-${itemIdx}`, collectionItemData, pageCollectionItemData, textStyles, isEditMode, linkContext, timezone, layerDataMap, components, renderComponentBlock, ancestorComponentIds, itemIdx)
       )
     );
+  }
+
+  if (block.type === 'blockquote') {
+    const bqProps: Record<string, any> = {
+      key,
+      className: getTextStyleClasses(textStyles, 'blockquote'),
+    };
+    if (isEditMode) {
+      bqProps['data-style'] = 'blockquote';
+    }
+    return React.createElement(
+      'blockquote',
+      bqProps,
+      block.content?.map((child: any, childIdx: number) =>
+        renderBlock(child, childIdx, collectionItemData, pageCollectionItemData, textStyles, useSpanForParagraphs, isEditMode, linkContext, timezone, layerDataMap, components, renderComponentBlock, ancestorComponentIds)
+      )
+    );
+  }
+
+  if (block.type === 'richTextImage') {
+    const imgProps: Record<string, any> = {
+      key,
+      src: block.attrs?.src || '',
+      alt: block.attrs?.alt || '',
+      className: getTextStyleClasses(textStyles, 'richTextImage'),
+    };
+    if (isEditMode) {
+      imgProps['data-style'] = 'richTextImage';
+    }
+    if (block.attrs?.assetId) {
+      imgProps['data-asset-id'] = block.attrs.assetId;
+    }
+    return React.createElement('img', imgProps);
   }
 
   // Handle embedded component blocks
@@ -848,6 +899,7 @@ function renderListItem(
   components?: Component[],
   renderComponentBlock?: RenderComponentBlockFn,
   ancestorComponentIds?: Set<string>,
+  itemIdx?: number,
 ): React.ReactNode {
   if (item.type !== 'listItem') return null;
 
@@ -864,6 +916,9 @@ function renderListItem(
   };
   if (isEditMode) {
     liProps['data-style'] = 'listItem';
+    if (itemIdx !== undefined) {
+      liProps['data-list-item-index'] = itemIdx;
+    }
   }
   return React.createElement('li', liProps, children);
 }
@@ -930,6 +985,7 @@ export function renderRichText(
   components?: Component[],
   renderComponentBlock?: RenderComponentBlockFn,
   ancestorComponentIds?: Set<string>,
+  isSimpleTextElement = false,
 ): React.ReactNode {
   const content = variable.data.content;
 
@@ -947,14 +1003,32 @@ export function renderRichText(
   if (doc.content.length === 1 && doc.content[0].type === 'paragraph') {
     const paragraph = doc.content[0];
     if (!paragraph.content || paragraph.content.length === 0) {
+      if (isEditMode && !isSimpleTextElement) {
+        const paragraphClass = textStyles?.paragraph?.classes ?? DEFAULT_TEXT_STYLES.paragraph?.classes ?? '';
+        return React.createElement('span', { 'data-style': 'paragraph', 'data-block-index': 0, className: paragraphClass }, '\u00A0');
+      }
       return null;
     }
-    return renderInlineContent(paragraph.content, collectionItemData, pageCollectionItemData, textStyles, isEditMode, linkContext, timezone, layerDataMap, components, renderComponentBlock, ancestorComponentIds);
+    const inlineContent = renderInlineContent(paragraph.content, collectionItemData, pageCollectionItemData, textStyles, isEditMode, linkContext, timezone, layerDataMap, components, renderComponentBlock, ancestorComponentIds);
+    if (isEditMode && !isSimpleTextElement) {
+      const paragraphClass = textStyles?.paragraph?.classes ?? DEFAULT_TEXT_STYLES.paragraph?.classes ?? '';
+      const children = Array.isArray(inlineContent) ? inlineContent : [inlineContent];
+      return React.createElement('span', { 'data-style': 'paragraph', 'data-block-index': 0, className: paragraphClass }, ...children);
+    }
+    return inlineContent;
   }
 
-  return doc.content.map((block: any, idx: number) =>
-    renderBlock(block, idx, collectionItemData, pageCollectionItemData, textStyles, useSpanForParagraphs, isEditMode, linkContext, timezone, layerDataMap, components, renderComponentBlock, ancestorComponentIds)
-  );
+  let visibleBlockIdx = 0;
+  return doc.content.map((block: any, idx: number) => {
+    const element = renderBlock(block, idx, collectionItemData, pageCollectionItemData, textStyles, useSpanForParagraphs, isEditMode, linkContext, timezone, layerDataMap, components, renderComponentBlock, ancestorComponentIds);
+    const isVisibleBlock = block.type !== 'paragraph' || block.content?.length;
+    if (element && isVisibleBlock && isEditMode) {
+      return React.cloneElement(element as React.ReactElement<any>, {
+        'data-block-index': visibleBlockIdx++,
+      });
+    }
+    return element;
+  });
 }
 
 /**

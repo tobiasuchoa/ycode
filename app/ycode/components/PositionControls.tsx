@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, memo } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -20,7 +20,7 @@ interface PositionControlsProps {
   onLayerUpdate: (layerId: string, updates: Partial<Layer>) => void;
 }
 
-export default function PositionControls({ layer, onLayerUpdate }: PositionControlsProps) {
+const PositionControls = memo(function PositionControls({ layer, onLayerUpdate }: PositionControlsProps) {
   const { activeBreakpoint, activeUIState } = useEditorStore();
   const { updateDesignProperty, debouncedUpdateDesignProperty, getDesignProperty } = useDesignSync({
     layer,
@@ -260,4 +260,5 @@ export default function PositionControls({ layer, onLayerUpdate }: PositionContr
       </div>
     </div>
   );
-}
+});
+export default PositionControls;

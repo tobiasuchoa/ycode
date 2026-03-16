@@ -8,6 +8,8 @@ import { iconExists, IconProps } from '@/components/ui/icon';
 import { getBlockIcon, getBlockName } from '@/lib/templates/blocks';
 import { isSliderLayerName } from '@/lib/templates/utilities';
 import { resolveInlineVariablesFromData } from '@/lib/inline-variables';
+import { DEFAULT_TEXT_STYLES } from '@/lib/text-format-utils';
+import { getCmsFieldBinding } from '@/lib/tiptap-utils';
 import { applyComponentOverrides } from '@/lib/resolve-components';
 import { resolveFieldFromSources } from '@/lib/cms-variables-utils';
 import { parseMultiReferenceValue } from '@/lib/collection-utils';
@@ -17,6 +19,70 @@ import { layerHasLink, hasLinkInTree, hasRichTextLinks } from '@/lib/link-utils'
 
 // Alias for backwards compatibility within this file
 const hasLinkSettings = layerHasLink;
+
+// ─── Cached Layer Index ───
+
+export interface LayerIndexes {
+  layerMap: Map<string, Layer>;
+  parentMap: Map<string, string>;
+}
+
+const indexCache = new WeakMap<Layer[], LayerIndexes>();
+
+function buildLayerIndexes(layers: Layer[]): LayerIndexes {
+  const layerMap = new Map<string, Layer>();
+  const parentMap = new Map<string, string>();
+  const walk = (nodes: Layer[], parentId: string | null) => {
+    for (const node of nodes) {
+      layerMap.set(node.id, node);
+      if (parentId) parentMap.set(node.id, parentId);
+      if (node.children) walk(node.children, node.id);
+    }
+  };
+  walk(layers, null);
+  return { layerMap, parentMap };
+}
+
+export function getLayerIndexes(layers: Layer[]): LayerIndexes {
+  let cached = indexCache.get(layers);
+  if (!cached) {
+    cached = buildLayerIndexes(layers);
+    indexCache.set(layers, cached);
+  }
+  return cached;
+}
+
+export function indexedFindLayerById(indexes: LayerIndexes, id: string): Layer | null {
+  return indexes.layerMap.get(id) ?? null;
+}
+
+export function indexedFindLayerWithParent(indexes: LayerIndexes, targetId: string): { layer: Layer; parent: Layer | null } | null {
+  const layer = indexes.layerMap.get(targetId);
+  if (!layer) return null;
+  const parentId = indexes.parentMap.get(targetId);
+  const parent = parentId ? indexes.layerMap.get(parentId) ?? null : null;
+  return { layer, parent };
+}
+
+export function indexedFindParentCollectionLayer(indexes: LayerIndexes, layerId: string): Layer | null {
+  let parentId = indexes.parentMap.get(layerId);
+  while (parentId) {
+    const parent = indexes.layerMap.get(parentId);
+    if (parent && getCollectionVariable(parent)) return parent;
+    parentId = indexes.parentMap.get(parentId);
+  }
+  return null;
+}
+
+export function indexedFindAncestor(indexes: LayerIndexes, layerId: string, predicate: (layer: Layer) => boolean): Layer | null {
+  let parentId = indexes.parentMap.get(layerId);
+  while (parentId) {
+    const parent = indexes.layerMap.get(parentId);
+    if (parent && predicate(parent)) return parent;
+    parentId = indexes.parentMap.get(parentId);
+  }
+  return null;
+}
 
 /**
  * Strip UI-only properties from layers before comparison/hashing
@@ -441,6 +507,301 @@ export function isTextEditable(layer: Layer): boolean {
 }
 
 /**
+ * Check if a layer is a text-content layer (heading or text).
+ * Use this for checks that should apply to both headings and text elements,
+ * such as showing typography controls, text content editing, etc.
+ */
+export function isTextContentLayer(layer: Layer | null | undefined): boolean {
+  if (!layer) return false;
+  return layer.name === 'heading' || layer.name === 'text';
+}
+
+/**
+ * Check if a layer is a rich text element (block-level text with full formatting).
+ */
+export function isRichTextLayer(layer: Layer | null | undefined): boolean {
+  if (!layer) return false;
+  return layer.name === 'richText';
+}
+
+export interface RichTextSublayer {
+  type: string;
+  label: string;
+  icon: string;
+  /** 'content' = actual TipTap block, 'style' = text style target, 'listItem' = individual list entry */
+  kind: 'content' | 'style' | 'listItem';
+  /** For style sublayers: the textStyles key (e.g., 'h1', 'bold', 'paragraph') */
+  styleKey?: string;
+  /** For listItem sublayers: 0-based index within the parent list */
+  itemIndex?: number;
+  /** For content sublayers: inline mark children found in this block */
+  children?: RichTextSublayer[];
+}
+
+const SUBLAYER_ICON_MAP: Record<string, string> = {
+  paragraph: 'paragraph',
+  heading: 'heading',
+  bulletList: 'listUnordered',
+  orderedList: 'listOrdered',
+  blockquote: 'quote',
+  richTextComponent: 'component',
+  richTextImage: 'image',
+};
+
+/**
+ * Maps TipTap content block types to textStyle keys.
+ * Used when selecting a content sublayer to also target the correct text style.
+ */
+export function contentBlockToStyleKey(block: { type: string; attrs?: Record<string, any> }): string | null {
+  switch (block.type) {
+    case 'paragraph': return 'paragraph';
+    case 'heading': return `h${block.attrs?.level || 1}`;
+    case 'bulletList': return 'bulletList';
+    case 'orderedList': return 'orderedList';
+    case 'blockquote': return 'blockquote';
+    case 'richTextImage': return 'richTextImage';
+    default: return null;
+  }
+}
+
+/**
+ * Extract plain text from a TipTap block node (recursively walks content/text).
+ */
+export function extractBlockText(block: any): string {
+  if (!block) return '';
+  if (typeof block === 'string') return block;
+  if (block.text) return block.text;
+  if (Array.isArray(block)) return block.map(extractBlockText).join('');
+  if (block.content) return extractBlockText(block.content);
+  return '';
+}
+
+/**
+ * Recursively extract all unique inline mark types from a TipTap content block.
+ */
+function extractInlineMarks(block: any): string[] {
+  const marks = new Set<string>();
+
+  function traverse(node: any) {
+    if (node.marks && Array.isArray(node.marks)) {
+      node.marks.forEach((mark: any) => {
+        if (mark.type) marks.add(mark.type);
+      });
+    }
+    if (node.content && Array.isArray(node.content)) {
+      node.content.forEach(traverse);
+    }
+  }
+
+  traverse(block);
+  return Array.from(marks);
+}
+
+/**
+ * Extract content sublayer metadata from a richText layer's TipTap content.
+ * Returns one entry per top-level block (paragraph, heading, list, etc.).
+ * Each block includes inline mark children (bold, italic, etc.) found in its content.
+ *
+ * When a CMS field is bound, pass the resolved CMS content via `cmsContent`
+ * so sublayers reflect the actual CMS item data.
+ */
+export function getRichTextSublayers(layer: Layer, cmsContent?: any): RichTextSublayer[] {
+  const textVar = layer.variables?.text;
+  if (textVar?.type !== 'dynamic_rich_text') return [];
+  const layerDoc = (textVar.data as any)?.content;
+  if (!layerDoc?.content || !Array.isArray(layerDoc.content)) return [];
+
+  // When content is bound to a CMS field, use the resolved CMS content for sublayers
+  const binding = getCmsFieldBinding(layerDoc);
+  if (binding) {
+    let resolvedDoc = cmsContent;
+    if (typeof resolvedDoc === 'string') {
+      try { resolvedDoc = JSON.parse(resolvedDoc); } catch { resolvedDoc = null; }
+    }
+    if (!resolvedDoc?.content || !Array.isArray(resolvedDoc.content)) return [];
+    return buildSublayersFromDoc(resolvedDoc, layer);
+  }
+
+  return buildSublayersFromDoc(layerDoc, layer);
+}
+
+/** Build sublayer metadata from a Tiptap document's content blocks. */
+function buildSublayersFromDoc(doc: any, layer: Layer): RichTextSublayer[] {
+
+  return doc.content
+    .filter((block: any) => block.type !== 'paragraph' || block.content?.length)
+    .map((block: any) => {
+      const type = block.type;
+      const icon = SUBLAYER_ICON_MAP[type] || 'box';
+
+      const SUBLAYER_FALLBACK_MAP: Record<string, string> = {
+        paragraph: 'Paragraph',
+        heading: `Heading ${block.attrs?.level || 1}`,
+        bulletList: 'Bullet List',
+        orderedList: 'Ordered List',
+        blockquote: 'Blockquote',
+        richTextComponent: 'Component',
+        richTextImage: 'Image',
+        codeBlock: 'Code Block',
+        horizontalRule: 'Divider',
+      };
+
+      const textContent = extractBlockText(block).trim();
+      const label = textContent
+        ? (textContent.length > 30 ? textContent.slice(0, 30) + '...' : textContent)
+        : (SUBLAYER_FALLBACK_MAP[type] || type);
+
+      const children: RichTextSublayer[] = [];
+
+      const isList = type === 'bulletList' || type === 'orderedList';
+      if (isList && block.content && Array.isArray(block.content)) {
+        let listItemIdx = 0;
+        block.content.forEach((listItem: any) => {
+          if (listItem.type !== 'listItem') return;
+          const itemText = extractBlockText(listItem).trim();
+          const itemLabel = itemText
+            ? (itemText.length > 30 ? itemText.slice(0, 30) + '...' : itemText)
+            : 'List Item';
+          children.push({
+            type: 'listItem',
+            label: itemLabel,
+            icon: 'listItem',
+            kind: 'listItem' as const,
+            styleKey: 'listItem',
+            itemIndex: listItemIdx,
+          });
+          listItemIdx++;
+        });
+      }
+
+      const marks = extractInlineMarks(block);
+      INLINE_STYLE_KEYS
+        .filter(k => marks.includes(k))
+        .forEach(markType => {
+          children.push({
+            type: markType,
+            label: DEFAULT_TEXT_STYLES[markType]?.label || markType,
+            icon: STYLE_SUBLAYER_ICON_MAP[markType] || 'type',
+            kind: 'style' as const,
+            styleKey: markType,
+          });
+        });
+
+      return {
+        type, kind: 'content' as const, icon,
+        label: isList ? (SUBLAYER_FALLBACK_MAP[type] || type) : label,
+        styleKey: contentBlockToStyleKey(block) ?? undefined,
+        children: children.length > 0 ? children : undefined,
+      };
+    });
+}
+
+const STYLE_SUBLAYER_ICON_MAP: Record<string, string> = {
+  paragraph: 'paragraph',
+  h1: 'heading',
+  h2: 'heading',
+  h3: 'heading',
+  h4: 'heading',
+  h5: 'heading',
+  h6: 'heading',
+  bold: 'bold',
+  italic: 'italic',
+  underline: 'underline',
+  strike: 'strikethrough',
+  link: 'link',
+  bulletList: 'listUnordered',
+  orderedList: 'listOrdered',
+  listItem: 'text',
+  blockquote: 'quote',
+  richTextImage: 'image',
+};
+
+/** Inline mark style keys shown for all text layers */
+const INLINE_STYLE_KEYS = ['bold', 'italic', 'underline', 'strike', 'link'];
+
+/**
+ * Get text style sublayers for a layer.
+ * These represent styleable text element types (Bold, Italic, Heading 1, etc.)
+ */
+export function getTextStyleSublayers(layer: Layer): RichTextSublayer[] {
+  if (!isTextContentLayer(layer) && !isRichTextLayer(layer)) return [];
+
+  const textVar = layer.variables?.text;
+  const doc = textVar?.type === 'dynamic_rich_text' ? (textVar.data as any)?.content : null;
+  const usedMarks = doc ? extractInlineMarks(doc) : [];
+
+  const allStyles = {
+    ...DEFAULT_TEXT_STYLES,
+    ...layer.textStyles,
+  };
+
+  return INLINE_STYLE_KEYS
+    .filter(key => usedMarks.includes(key))
+    .map(key => ({
+      type: key,
+      label: allStyles[key]?.label || key,
+      icon: STYLE_SUBLAYER_ICON_MAP[key] || 'type',
+      kind: 'style' as const,
+      styleKey: key,
+    }));
+}
+
+/**
+ * Remove a sublayer (TipTap content block) from a richText layer by index.
+ * Returns a partial Layer update with the block removed from the content,
+ * or null if the removal is invalid (e.g. last remaining block).
+ */
+export function removeRichTextSublayer(layer: Layer, sublayerIndex: number): Partial<Layer> | null {
+  const textVar = layer.variables?.text;
+  if (textVar?.type !== 'dynamic_rich_text') return null;
+  const doc = (textVar.data as any)?.content;
+  if (!doc?.content || !Array.isArray(doc.content)) return null;
+
+  // Map sublayer index back to raw content index (we filter empty paragraphs in getRichTextSublayers)
+  const visibleIndices: number[] = [];
+  doc.content.forEach((block: any, i: number) => {
+    if (block.type !== 'paragraph' || block.content?.length) {
+      visibleIndices.push(i);
+    }
+  });
+
+  const rawIndex = visibleIndices[sublayerIndex];
+  if (rawIndex === undefined) return null;
+
+  const newContent = [...doc.content];
+  newContent.splice(rawIndex, 1);
+
+  // Don't allow removing the last block
+  if (newContent.length === 0) return null;
+
+  return {
+    variables: {
+      ...layer.variables,
+      text: {
+        ...textVar,
+        data: {
+          ...(textVar.data as any),
+          content: { ...doc, content: newContent },
+        },
+      },
+    },
+  };
+}
+
+/**
+ * Check if a layer is a heading element.
+ * Includes backward compat: text layers with h1-h6 tag are treated as headings.
+ */
+export function isHeadingLayer(layer: Layer | null | undefined): boolean {
+  if (!layer) return false;
+  if (layer.name === 'heading') return true;
+  if (layer.name === 'text') {
+    return ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(layer.settings?.tag || '');
+  }
+  return false;
+}
+
+/**
  * Get the HTML tag name for a layer
  */
 export function getHtmlTag(layer: Layer): string {
@@ -601,7 +962,7 @@ export function canHaveChildren(layer: Layer, childLayerType?: string): boolean 
 
   const blocksWithoutChildren = [
     'icon', 'image', 'audio', 'video', 'iframe',
-    'text', 'span', 'label', 'hr',
+    'heading', 'text', 'richText', 'span', 'label', 'hr',
     'input', 'textarea', 'select', 'checkbox', 'radio',
     'htmlEmbed',
   ];
@@ -991,7 +1352,13 @@ export function getLayerIcon(
     return 'database';
   }
 
-  // Text layers
+  // Heading layers
+  if (layer.name === 'heading') return 'heading';
+
+  // Rich text layers
+  if (layer.name === 'richText') return 'rich-text';
+
+  // Text layers (backward compat: text with h1-h6 tag still shows heading icon)
   if (layer.name === 'text') {
     return ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(layer.settings?.tag || '') ? 'heading' : 'text';
   }
@@ -1093,6 +1460,16 @@ export function getLayerHtmlTag(layer: Layer): string {
     return layer.settings.tag;
   }
 
+  // Heading layers default to h2 when no tag is set
+  if (layer.name === 'heading') {
+    return 'h2';
+  }
+
+  // Rich text renders as div (contains block-level content)
+  if (layer.name === 'richText') {
+    return 'div';
+  }
+
   // Slider sub-layers always render as divs
   if (isSliderLayerName(layer.name)) {
     return 'div';
@@ -1154,6 +1531,68 @@ export function hasSingleInlineVariable(layer: Layer): boolean {
   // Remove the variable tag and check if only whitespace remains
   const withoutVariable = content.replace(regex, '').trim();
   return withoutVariable === '';
+}
+
+export interface CmsFieldBindingInfo {
+  field_id: string;
+  source?: 'page' | 'collection';
+  collection_layer_id?: string;
+}
+
+/**
+ * Check if a layer has any CMS field binding across all variable slots
+ * (text, image, audio, video, backgroundImage, link, design colors).
+ * Returns the first binding found, or null if none.
+ */
+export function getLayerCmsFieldBinding(layer: Layer): CmsFieldBindingInfo | null {
+  const vars = layer.variables;
+  if (!vars) return null;
+
+  // Helper to extract binding info from a FieldVariable-shaped object
+  const extractBinding = (v: any): CmsFieldBindingInfo | null => {
+    if (v && typeof v === 'object' && v.type === 'field' && v.data?.field_id) {
+      return { field_id: v.data.field_id, source: v.data.source, collection_layer_id: v.data.collection_layer_id };
+    }
+    return null;
+  };
+
+  // Direct FieldVariable bindings on media / background / link
+  const directSlots = [vars.image?.src, vars.audio?.src, vars.video?.src, vars.video?.poster, vars.backgroundImage?.src, vars.link?.field];
+  for (const slot of directSlots) {
+    const b = extractBinding(slot);
+    if (b) return b;
+  }
+
+  // Tiptap rich text inline CMS variables
+  if (vars.text?.type === 'dynamic_rich_text') {
+    const b = getCmsFieldBinding(vars.text.data.content);
+    if (b) return b;
+  }
+
+  // Legacy dynamic_text inline variables
+  if (vars.text?.type === 'dynamic_text') {
+    const content = vars.text.data.content;
+    const match = content.match(/<ycode-inline-variable>([\s\S]*?)<\/ycode-inline-variable>/);
+    if (match) {
+      try {
+        const parsed = JSON.parse(match[1]);
+        const b = extractBinding(parsed);
+        if (b) return b;
+      } catch { /* ignore parse errors */ }
+    }
+  }
+
+  // Design color field bindings
+  if (vars.design) {
+    for (const colorVar of Object.values(vars.design)) {
+      if (colorVar && typeof colorVar === 'object' && 'field' in colorVar) {
+        const b = extractBinding((colorVar as DesignColorVariable).field);
+        if (b) return b;
+      }
+    }
+  }
+
+  return null;
 }
 
 /**

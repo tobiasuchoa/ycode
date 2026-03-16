@@ -691,9 +691,11 @@ export async function getUnpublishedAssets(): Promise<Asset[]> {
   // Batch fetch published content_hash values for comparison
   const publishedHashById = new Map<string, string | null>();
   const draftIds = draftAssets.map(a => a.id);
+  // Use smaller .in() batches to avoid PostgREST URL/request size limits.
+  const PUBLISHED_ASSET_HASH_BATCH_SIZE = 200;
 
-  for (let i = 0; i < draftIds.length; i += SUPABASE_QUERY_LIMIT) {
-    const batchIds = draftIds.slice(i, i + SUPABASE_QUERY_LIMIT);
+  for (let i = 0; i < draftIds.length; i += PUBLISHED_ASSET_HASH_BATCH_SIZE) {
+    const batchIds = draftIds.slice(i, i + PUBLISHED_ASSET_HASH_BATCH_SIZE);
     const { data: publishedAssets, error: publishedError } = await client
       .from('assets')
       .select('id, content_hash')

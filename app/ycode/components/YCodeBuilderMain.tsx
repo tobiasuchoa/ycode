@@ -63,7 +63,7 @@ import { useLiveLayerStyleUpdates } from '@/hooks/use-live-layer-style-updates';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useClipboardStore } from '@/stores/useClipboardStore';
 import { useEditorStore } from '@/stores/useEditorStore';
-import { usePagesStore } from '@/stores/usePagesStore';
+import { usePagesStore, consumePageMcpSync } from '@/stores/usePagesStore';
 import { useComponentsStore } from '@/stores/useComponentsStore';
 import { useLayerStylesStore } from '@/stores/useLayerStylesStore';
 import { useCollaborationPresenceStore, getResourceLockKey, RESOURCE_TYPES } from '@/stores/useCollaborationPresenceStore';
@@ -79,7 +79,7 @@ import { useVersionsStore } from '@/stores/useVersionsStore';
 
 // 6. Utils/lib
 import { findHomepage } from '@/lib/page-utils';
-import { findLayerById, getClassesString, removeLayerById, canCopyLayer, canDeleteLayer, regenerateIdsWithInteractionRemapping, findParentAndIndex, insertLayerAfter, updateLayerProps } from '@/lib/layer-utils';
+import { findLayerById, getClassesString, removeLayerById, canCopyLayer, canDeleteLayer, regenerateIdsWithInteractionRemapping, findParentAndIndex, insertLayerAfter, updateLayerProps, getLayerIndexes, removeRichTextSublayer } from '@/lib/layer-utils';
 import { cloneDeep } from 'lodash';
 
 // 5. Types
@@ -126,12 +126,15 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
   const createComponentDialog = useEditorStore((state) => state.createComponentDialog);
   const openCreateComponentDialog = useEditorStore((state) => state.openCreateComponentDialog);
   const closeCreateComponentDialog = useEditorStore((state) => state.closeCreateComponentDialog);
+  const activeSublayerIndex = useEditorStore((state) => state.activeSublayerIndex);
+  const setActiveSublayerIndex = useEditorStore((state) => state.setActiveSublayerIndex);
 
   const collections = useCollectionsStore((state) => state.collections);
   const selectedCollectionId = useCollectionsStore((state) => state.selectedCollectionId);
 
   const updateLayer = usePagesStore((state) => state.updateLayer);
-  const draftsByPageId = usePagesStore((state) => state.draftsByPageId);
+  const currentDraft = usePagesStore((state) => currentPageId ? state.draftsByPageId[currentPageId] : null);
+  const draftsLoaded = usePagesStore((state) => Object.keys(state.draftsByPageId).length > 0);
   const deleteLayer = usePagesStore((state) => state.deleteLayer);
   const deleteLayers = usePagesStore((state) => state.deleteLayers);
   const saveDraft = usePagesStore((state) => state.saveDraft);
@@ -204,11 +207,10 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
       return componentDrafts[editingComponentId] || [];
     }
     if (currentPageId) {
-      const draft = draftsByPageId[currentPageId];
-      return draft ? draft.layers : [];
+      return currentDraft ? currentDraft.layers : [];
     }
     return [];
-  }, [editingComponentId, currentPageId, draftsByPageId]);
+  }, [editingComponentId, currentPageId, currentDraft]);
 
   // Helper: Update current layers (page or component)
   const updateCurrentLayers = useCallback((newLayers: Layer[]) => {
@@ -308,8 +310,7 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
     if ((isPageOrLayersRoute || isComponentRoute) && urlState.layerId) {
       // For pages, wait for draft. For components, wait for component draft
       if (isPageOrLayersRoute && currentPageId) {
-        const draft = draftsByPageId[currentPageId];
-        if (!draft || !draft.layers) {
+        if (!currentDraft || !currentDraft.layers) {
           return; // Draft not loaded yet, wait for next render
         }
       } else if (isComponentRoute && editingComponentId) {
@@ -337,8 +338,7 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
     } else if ((isPageOrLayersRoute || isComponentRoute) && !urlState.layerId) {
       // No layer in URL - mark as initialized so clicks will update URL from now on
       if (isPageOrLayersRoute && currentPageId) {
-        const draft = draftsByPageId[currentPageId];
-        if (draft && draft.layers) {
+        if (currentDraft && currentDraft.layers) {
           hasInitializedLayerFromUrlRef.current = true;
         }
       } else if (isComponentRoute && editingComponentId) {
@@ -348,7 +348,7 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
         }
       }
     }
-  }, [urlState.layerId, resourceId, routeType, setSelectedLayerId, currentPageId, editingComponentId, draftsByPageId, getCurrentLayers]);
+  }, [urlState.layerId, resourceId, routeType, setSelectedLayerId, currentPageId, editingComponentId, currentDraft, getCurrentLayers]);
 
   // Sync selected layer to URL (but only after initialization from URL, skip when in page settings mode or during edit mode transition)
   useEffect(() => {
@@ -372,8 +372,6 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
   // Generate initial CSS if draft_css is empty (one-time check after data loads)
   const initialCssCheckRef = useRef(false);
   const settingsLoaded = useSettingsStore((state) => state.settings.length > 0);
-  const draftsCount = Object.keys(draftsByPageId).length;
-
   useEffect(() => {
     // Early return if already checked - this must be the FIRST check
     if (initialCssCheckRef.current) {
@@ -381,7 +379,7 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
     }
 
     // Wait for all initial data to be loaded
-    if (!migrationsComplete || draftsCount === 0 || !settingsLoaded) {
+    if (!migrationsComplete || !draftsLoaded || !settingsLoaded) {
       return;
     }
 
@@ -420,7 +418,7 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
     };
 
     generateInitialCSS();
-  }, [migrationsComplete, draftsCount, settingsLoaded]);
+  }, [migrationsComplete, draftsLoaded, settingsLoaded]);
 
   // Add overflow-hidden to body when builder is mounted
   useEffect(() => {
@@ -505,12 +503,16 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
             setFonts(response.data.fonts || []);
 
             // Load async data in parallel
-            const asyncTasks = [];
+            const asyncTasks: Promise<unknown>[] = [];
 
             // Add collections preloading if we have collections
             if (response.data.collections && response.data.collections.length > 0) {
               asyncTasks.push(preloadCollectionsAndItems(response.data.collections));
             }
+
+            // Load color variables
+            const { useColorVariablesStore } = await import('@/stores/useColorVariablesStore');
+            asyncTasks.push(useColorVariablesStore.getState().loadColorVariables());
 
             // Wait for all async tasks to complete
             if (asyncTasks.length > 0) {
@@ -617,7 +619,7 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
       previousPageIdRef.current = currentPageId;
 
       // Check if draft is loaded
-      if (draftsByPageId[currentPageId] && !urlState.layerId) {
+      if (currentDraft && !urlState.layerId) {
         // Check if Body layer is locked by another user before auto-selecting
         const { resourceLocks, currentUserId } = useCollaborationPresenceStore.getState();
         const bodyLockKey = getResourceLockKey(RESOURCE_TYPES.LAYER, 'body');
@@ -630,25 +632,17 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
         if (!isBodyLockedByOther) {
           setSelectedLayerId('body');
         }
-        // If Body is locked, keep selection as null - user can click on an unlocked layer
       }
       // If urlState.layerId exists, let the URL initialization effect handle it
     }
-  }, [currentPageId, draftsByPageId, setSelectedLayerId, urlState.layerId]);
+  }, [currentPageId, currentDraft, setSelectedLayerId, urlState.layerId]);
 
-  // Get selected layer
+  // Get selected layer via cached index (O(1) lookup)
   const selectedLayer = useMemo(() => {
-    if (!currentPageId || !selectedLayerId) return null;
-    const draft = draftsByPageId[currentPageId];
-    if (!draft) return null;
-    const stack: Layer[] = [...draft.layers];
-    while (stack.length) {
-      const node = stack.shift()!;
-      if (node.id === selectedLayerId) return node;
-      if (node.children) stack.push(...node.children);
-    }
-    return null;
-  }, [currentPageId, selectedLayerId, draftsByPageId]);
+    if (!currentPageId || !selectedLayerId || !currentDraft) return null;
+    const { layerMap } = getLayerIndexes(currentDraft.layers);
+    return layerMap.get(selectedLayerId) ?? null;
+  }, [currentPageId, selectedLayerId, currentDraft]);
 
   // Find the next layer to select after deletion
   // Priority: next sibling > previous sibling > parent
@@ -707,6 +701,25 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
   // Delete selected layer
   const deleteSelectedLayer = useCallback(() => {
     if (!selectedLayerId) return;
+
+    // Handle sublayer deletion (remove TipTap block, not the whole layer)
+    if (activeSublayerIndex !== null) {
+      const layers = getCurrentLayers();
+      const richTextLayer = findLayerById(layers, selectedLayerId);
+      if (!richTextLayer) return;
+
+      const updates = removeRichTextSublayer(richTextLayer, activeSublayerIndex);
+      if (!updates) return;
+
+      if (currentPageId) {
+        updateLayer(currentPageId, selectedLayerId, updates);
+      } else if (editingComponentId) {
+        const newLayers = layers.map(l => l.id === selectedLayerId ? { ...l, ...updates } : l);
+        updateCurrentLayers(newLayers);
+      }
+      setActiveSublayerIndex(null);
+      return;
+    }
 
     // Find the next layer to select before deleting
     const layers = getCurrentLayers();
@@ -775,7 +788,30 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
         liveLayerUpdates.broadcastLayerDelete(currentPageId, selectedLayerId);
       }
     }
-  }, [selectedLayerId, editingComponentId, currentPageId, getCurrentLayers, updateCurrentLayers, deleteLayer, setSelectedLayerId, liveLayerUpdates]);
+  }, [selectedLayerId, editingComponentId, currentPageId, getCurrentLayers, updateCurrentLayers, deleteLayer, setSelectedLayerId, liveLayerUpdates, activeSublayerIndex, setActiveSublayerIndex, updateLayer]);
+
+  // Stable callback for layer updates - reads current state from stores to avoid
+  // dependency on editingComponentId/currentPageId which would break React.memo
+  const handleLayerUpdate = useCallback((layerId: string, updates: Partial<Layer>) => {
+    const { editingComponentId: compId } = useEditorStore.getState();
+    if (compId) {
+      const { componentDrafts, updateComponentDraft } = useComponentsStore.getState();
+      const layers = componentDrafts[compId] || [];
+      const updateTree = (tree: Layer[]): Layer[] =>
+        tree.map(l => {
+          if (l.id === layerId) return { ...l, ...updates };
+          if (l.children) return { ...l, children: updateTree(l.children) };
+          return l;
+        });
+      updateComponentDraft(compId, updateTree(layers));
+    } else {
+      const pageId = useEditorStore.getState().currentPageId;
+      if (pageId) {
+        usePagesStore.getState().updateLayer(pageId, layerId, updates);
+        liveLayerUpdates?.broadcastLayerUpdate(layerId, updates);
+      }
+    }
+  }, [liveLayerUpdates]);
 
   // Immediate save function (bypasses debouncing)
   const saveImmediately = useCallback(async (pageId: string) => {
@@ -849,27 +885,31 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
 
   // Watch for draft changes and trigger autosave
   useEffect(() => {
-    if (!currentPageId || !draftsByPageId[currentPageId]) {
+    if (!currentPageId || !currentDraft) {
       return;
     }
 
-    const draft = draftsByPageId[currentPageId];
-    const currentLayersJSON = JSON.stringify(draft.layers);
+    const currentLayersJSON = JSON.stringify(currentDraft.layers);
     const lastLayersJSON = lastLayersByPageRef.current.get(currentPageId);
 
     // Only trigger save if layers actually changed for THIS page
     if (lastLayersJSON && lastLayersJSON !== currentLayersJSON) {
-      // Always trigger auto-save - undo/redo operations use markUndoRedoSave() to prevent version creation
-      setHasUnsavedChanges(true);
-      debouncedSave(currentPageId);
+      if (consumePageMcpSync(currentPageId)) {
+        // MCP already saved to DB — cancel any pending autosave and accept
+        if (saveTimeoutRef.current) {
+          clearTimeout(saveTimeoutRef.current);
+          saveTimeoutRef.current = null;
+        }
+        setHasUnsavedChanges(false);
+      } else {
+        setHasUnsavedChanges(true);
+        debouncedSave(currentPageId);
+      }
     }
 
     // Update the ref for next comparison (store per page)
     lastLayersByPageRef.current.set(currentPageId, currentLayersJSON);
-    // NOTE: No cleanup here — clearing the save timeout on every re-run caused a race
-    // condition where saves scheduled during an in-flight save were cancelled when
-    // saveDraft updated draftsByPageId metadata, triggering this effect's cleanup.
-  }, [currentPageId, draftsByPageId, debouncedSave]);
+  }, [currentPageId, currentDraft, debouncedSave]);
 
   // Cleanup save timeout on unmount only
   useEffect(() => {
@@ -1619,8 +1659,8 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
                 });
               } else {
                 // Replace layer with component's layers (detach)
-                const draft = draftsByPageId[currentPageId];
-                if (draft) {
+                const detachDraft = usePagesStore.getState().draftsByPageId[currentPageId];
+                if (detachDraft) {
                   const replaceLayerWithComponentLayers = (layers: Layer[]): Layer[] => {
                     return layers.flatMap(currentLayer => {
                       if (currentLayer.id === selectedLayerId) {
@@ -1647,7 +1687,7 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
                     }));
                   };
 
-                  const newLayers = replaceLayerWithComponentLayers(draft.layers);
+                  const newLayers = replaceLayerWithComponentLayers(detachDraft.layers);
                   setDraftLayers(currentPageId, newLayers);
                   setSelectedLayerId(null);
                 }
@@ -1666,7 +1706,6 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
     selectedLayerIds,
     currentPageId,
     editingComponentId,
-    draftsByPageId,
     setSelectedLayerId,
     getCurrentLayers,
     updateCurrentLayers,
@@ -1892,37 +1931,7 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
               {!isPreviewMode && (
                 <RightSidebar
                   selectedLayerId={selectedLayerId}
-                  onLayerUpdate={(layerId, updates) => {
-                    // If editing component, update component draft
-                    if (editingComponentId) {
-                      const { componentDrafts, updateComponentDraft } = useComponentsStore.getState();
-                      const layers = componentDrafts[editingComponentId] || [];
-
-                      // Find and update layer in tree
-                      const updateLayerInTree = (tree: Layer[]): Layer[] => {
-                        return tree.map(layer => {
-                          if (layer.id === layerId) {
-                            return { ...layer, ...updates };
-                          }
-                          if (layer.children) {
-                            return { ...layer, children: updateLayerInTree(layer.children) };
-                          }
-                          return layer;
-                        });
-                      };
-
-                      const updatedLayers = updateLayerInTree(layers);
-                      updateComponentDraft(editingComponentId, updatedLayers);
-                    } else if (currentPageId) {
-                      // Regular page mode
-                      updateLayer(currentPageId, layerId, updates);
-
-                      // Broadcast to other collaborators
-                      if (liveLayerUpdates) {
-                        liveLayerUpdates.broadcastLayerUpdate(layerId, updates);
-                      }
-                    }
-                  }}
+                  onLayerUpdate={handleLayerUpdate}
                 />
               )}
             </div>

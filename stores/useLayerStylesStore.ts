@@ -40,7 +40,7 @@ interface LayerStylesActions {
   loadStyles: () => Promise<void>;
 
   // CRUD operations
-  createStyle: (name: string, classes: string, design?: LayerStyle['design']) => Promise<LayerStyle | null>;
+  createStyle: (name: string, classes: string, design?: LayerStyle['design'], group?: string) => Promise<LayerStyle | null>;
   updateStyle: (id: string, updates: Partial<Pick<LayerStyle, 'name' | 'classes' | 'design'>>) => Promise<void>;
   deleteStyle: (id: string) => Promise<DeleteResult>;
 
@@ -50,6 +50,7 @@ interface LayerStylesActions {
   // Convenience actions
   renameStyle: (id: string, newName: string) => Promise<void>;
   getStyleById: (id: string) => LayerStyle | undefined;
+  getStylesByGroup: (group: string) => LayerStyle[];
 
   // State management
   setError: (error: string | null) => void;
@@ -88,7 +89,7 @@ export const useLayerStylesStore = create<LayerStylesStore>((set, get) => ({
   },
 
   // Create a new style
-  createStyle: async (name, classes, design) => {
+  createStyle: async (name, classes, design, group) => {
     set({ isLoading: true, error: null });
 
     try {
@@ -99,6 +100,7 @@ export const useLayerStylesStore = create<LayerStylesStore>((set, get) => ({
           name,
           classes,
           design,
+          group,
         }),
       });
 
@@ -354,6 +356,11 @@ export const useLayerStylesStore = create<LayerStylesStore>((set, get) => ({
   // Get style by ID (convenience method)
   getStyleById: (id) => {
     return get().styles.find((s) => s.id === id);
+  },
+
+  // Get styles filtered by group (styles without a group are included everywhere)
+  getStylesByGroup: (group) => {
+    return get().styles.filter((s) => !s.group || s.group === group);
   },
 
   // Error management

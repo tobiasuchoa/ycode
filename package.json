@@ -45,6 +45,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@hookform/resolvers": "^5.2.2",
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "@radix-ui/react-checkbox": "^1.3.3",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-context-menu": "^2.2.16",
@@ -64,9 +65,11 @@
     "@react-spring/web": "^10.0.3",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.76.1",
+    "@tanstack/react-virtual": "^3.13.22",
     "@tiptap/core": "^3.10.5",
     "@tiptap/extension-heading": "^3.10.7",
     "@tiptap/extension-history": "^3.20.0",
+    "@tiptap/extension-image": "^3.20.1",
     "@tiptap/extension-placeholder": "^3.11.0",
     "@tiptap/extension-subscript": "^3.15.3",
     "@tiptap/extension-superscript": "^3.15.3",
@@ -97,7 +100,7 @@
     "sonner": "^2.0.7",
     "swiper": "^12.1.2",
     "tailwind-merge": "^3.3.1",
-    "zod": "^4.1.12",
+    "zod": "^4.3.6",
     "zustand": "^5.0.8"
   },
   "devDependencies": {

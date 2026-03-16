@@ -28,8 +28,6 @@ interface CanvasTextEditorState {
     strike: boolean;
     subscript: boolean;
     superscript: boolean;
-    bulletList: boolean;
-    orderedList: boolean;
     /** Whether text has a link mark */
     richTextLink: boolean;
     /** Active dynamic style key (if any) */
@@ -72,10 +70,6 @@ interface CanvasTextEditorActions {
   toggleSubscript: () => void;
   /** Toggle superscript formatting */
   toggleSuperscript: () => void;
-  /** Toggle bullet list */
-  toggleBulletList: () => void;
-  /** Toggle ordered list */
-  toggleOrderedList: () => void;
   /** Toggle heading level (1-6) or set to paragraph (null) */
   setHeading: (level: 1 | 2 | 3 | 4 | 5 | 6 | null) => void;
   /** Toggle custom style formatting */
@@ -108,8 +102,6 @@ export const useCanvasTextEditorStore = create<CanvasTextEditorStore>((set, get)
     strike: false,
     subscript: false,
     superscript: false,
-    bulletList: false,
-    orderedList: false,
     richTextLink: false,
     dynamicStyleKey: null,
     headingLevel: null,
@@ -146,8 +138,6 @@ export const useCanvasTextEditorStore = create<CanvasTextEditorStore>((set, get)
         strike: false,
         subscript: false,
         superscript: false,
-        bulletList: false,
-        orderedList: false,
         richTextLink: false,
         dynamicStyleKey: null,
         headingLevel: null,
@@ -209,8 +199,6 @@ export const useCanvasTextEditorStore = create<CanvasTextEditorStore>((set, get)
       strike: editor.isActive('strike'),
       subscript: editor.isActive('subscript'),
       superscript: editor.isActive('superscript'),
-      bulletList: editor.isActive('bulletList'),
-      orderedList: editor.isActive('orderedList'),
       richTextLink: editor.isActive('richTextLink'),
       dynamicStyleKey,
       headingLevel,
@@ -242,10 +230,6 @@ export const useCanvasTextEditorStore = create<CanvasTextEditorStore>((set, get)
       textStyleKey = 'superscript';
     } else if (headingLevel) {
       textStyleKey = `h${headingLevel}`;
-    } else if (activeMarks.bulletList) {
-      textStyleKey = 'bulletList';
-    } else if (activeMarks.orderedList) {
-      textStyleKey = 'orderedList';
     }
 
     setActiveTextStyleKey(textStyleKey);
@@ -290,20 +274,6 @@ export const useCanvasTextEditorStore = create<CanvasTextEditorStore>((set, get)
     const { editor } = get();
     if (!editor) return;
     editor.chain().focus().toggleSuperscript().run();
-    get().updateActiveMarks();
-  },
-
-  toggleBulletList: () => {
-    const { editor } = get();
-    if (!editor) return;
-    editor.chain().focus().toggleBulletList().run();
-    get().updateActiveMarks();
-  },
-
-  toggleOrderedList: () => {
-    const { editor } = get();
-    if (!editor) return;
-    editor.chain().focus().toggleOrderedList().run();
     get().updateActiveMarks();
   },
 

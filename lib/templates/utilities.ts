@@ -65,7 +65,7 @@ function createSlideRef(title: string, imageUrl: string) {
     },
     children: [
       {
-        name: 'text',
+        name: 'heading',
         customName: 'Heading',
         settings: { tag: 'h1' },
         classes: ['text-[48px]', 'font-[700]', 'leading-[1.1]', 'tracking-[-0.01em]'],
@@ -206,7 +206,7 @@ export const utilityTemplates: Record<string, BlockTemplate> = {
       },
       children: [
         {
-          name: 'text',
+          name: 'heading',
           customName: 'Heading',
           settings: { tag: 'h1' },
           classes: ['text-[48px]', 'font-[700]', 'leading-[1.1]', 'tracking-[-0.01em]'],

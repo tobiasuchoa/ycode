@@ -39,12 +39,14 @@ export const CONTENT_TABLES = [
   'api_keys',
   'app_settings',
   'form_submissions',
+  'color_variables',
 ];
 
 /**
  * Tables to truncate before import (children first for FK safety).
  */
 export const TABLES_TO_TRUNCATE = [
+  'color_variables',
   'webhook_deliveries',
   'form_submissions',
   'translations',
