@@ -460,8 +460,12 @@ async function publishSelectedItems(
   for (const item of publishableItems) {
     const existing = publishedItemsById.get(item.id);
 
-    if (existing && existing.manual_order === item.manual_order && existing.is_publishable === item.is_publishable) {
-      // Item metadata unchanged - still need to check values
+    const metadataChanged = !existing
+      || existing.manual_order !== item.manual_order
+      || existing.is_publishable !== item.is_publishable
+      || existing.content_hash !== item.content_hash;
+
+    if (!metadataChanged) {
       itemIdsToPublishValues.push(item.id);
       continue;
     }
@@ -472,6 +476,7 @@ async function publishSelectedItems(
       manual_order: item.manual_order,
       is_publishable: item.is_publishable,
       is_published: true,
+      content_hash: item.content_hash,
       created_at: item.created_at,
       updated_at: now,
     });

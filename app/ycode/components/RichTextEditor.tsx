@@ -445,7 +445,6 @@ const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorProps>(({
         Code,
         RichTextImageWithNodeView,
         HorizontalRule,
-        RichTextImage,
       ];
 
       // Always include heading extension so content with headings is preserved

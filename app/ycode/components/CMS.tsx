@@ -112,6 +112,7 @@ interface SortableRowProps {
   isCollectionPublished: boolean;
   children: React.ReactNode;
   statusValue: import('./CollectionStatusPill').ItemStatusValue | null;
+  onEdit: () => void;
   onSetAsDraft: () => void;
   onStageForPublish: () => void;
   onSetAsPublished: () => void;
@@ -120,7 +121,7 @@ interface SortableRowProps {
   lockInfo?: ItemLockInfo;
 }
 
-function SortableRow({ item, isSaving, isManualMode, isCollectionPublished, children, statusValue, onSetAsDraft, onStageForPublish, onSetAsPublished, onDuplicate, onDelete, lockInfo }: SortableRowProps) {
+function SortableRow({ item, isSaving, isManualMode, isCollectionPublished, children, statusValue, onEdit, onSetAsDraft, onStageForPublish, onSetAsPublished, onDuplicate, onDelete, lockInfo }: SortableRowProps) {
   const {
     attributes,
     listeners,
@@ -147,7 +148,9 @@ function SortableRow({ item, isSaving, isManualMode, isCollectionPublished, chil
     <CollectionItemContextMenu
       isPublishable={statusValue?.is_publishable ?? item.is_publishable}
       hasPublishedVersion={statusValue?.is_published ?? false}
+      isModified={statusValue?.is_modified ?? false}
       isCollectionPublished={isCollectionPublished}
+      onEdit={onEdit}
       onSetAsDraft={onSetAsDraft}
       onStageForPublish={onStageForPublish}
       onSetAsPublished={onSetAsPublished}
@@ -1565,6 +1568,7 @@ const CMS = React.memo(function CMS() {
                     isManualMode={isManualMode}
                     isCollectionPublished={selectedCollection?.has_published_version ?? false}
                     statusValue={statusFieldId ? parseStatusValue(item.values[statusFieldId]) : null}
+                    onEdit={() => handleEditItem(item)}
                     onSetAsDraft={() => handleSetItemStatus(item.id, 'draft')}
                     onStageForPublish={() => handleSetItemStatus(item.id, 'stage')}
                     onSetAsPublished={() => handleSetItemStatus(item.id, 'publish')}
@@ -1576,9 +1580,7 @@ const CMS = React.memo(function CMS() {
                       className="pl-5 pr-3 py-3 w-12"
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (!isManualMode) {
-                          handleEditItem(item);
-                        }
+                        handleEditItem(item);
                       }}
                     >
                       <div className="flex">
@@ -1599,7 +1601,7 @@ const CMS = React.memo(function CMS() {
                           <td
                             key={field.id}
                             className="px-4 py-5"
-                            onClick={() => !isManualMode && handleEditItem(item)}
+                            onClick={() => handleEditItem(item)}
                           >
                             <CollectionStatusPill
                               statusValue={statusFieldId ? parseStatusValue(item.values[statusFieldId]) : null}
@@ -1616,7 +1618,7 @@ const CMS = React.memo(function CMS() {
                           <td
                             key={field.id}
                             className="px-4 py-5 text-muted-foreground"
-                            onClick={() => !isManualMode && handleEditItem(item)}
+                            onClick={() => handleEditItem(item)}
                           >
                             <span className="line-clamp-1 truncate">
                               {formatDateInTimezone(value, timezone, 'display')}
@@ -1637,7 +1639,7 @@ const CMS = React.memo(function CMS() {
                             <td
                               key={field.id}
                               className="px-4 py-5 text-muted-foreground"
-                              onClick={() => !isManualMode && handleEditItem(item)}
+                              onClick={() => handleEditItem(item)}
                             >
                               -
                             </td>
@@ -1648,7 +1650,7 @@ const CMS = React.memo(function CMS() {
                           <td
                             key={field.id}
                             className="px-4"
-                            onClick={() => !isManualMode && handleEditItem(item)}
+                            onClick={() => handleEditItem(item)}
                           >
                             <div className="flex items-center gap-1 -my-1.5">
                               {assetIds.slice(0, 3).map((assetId, idx) => {
@@ -1716,7 +1718,7 @@ const CMS = React.memo(function CMS() {
                             <td
                               key={field.id}
                               className="px-4 py-5 text-muted-foreground"
-                              onClick={() => !isManualMode && handleEditItem(item)}
+                              onClick={() => handleEditItem(item)}
                             >
                               -
                             </td>
@@ -1727,7 +1729,7 @@ const CMS = React.memo(function CMS() {
                           <td
                             key={field.id}
                             className="px-4"
-                            onClick={() => !isManualMode && handleEditItem(item)}
+                            onClick={() => handleEditItem(item)}
                           >
                             <div className="flex items-center gap-1 -my-1.5">
                               {assetIds.slice(0, 3).map((assetId, idx) => {
@@ -1763,7 +1765,7 @@ const CMS = React.memo(function CMS() {
                           <td
                             key={field.id}
                             className="px-4 py-5 text-muted-foreground"
-                            onClick={() => !isManualMode && handleEditItem(item)}
+                            onClick={() => handleEditItem(item)}
                           >
 
                             <ReferenceFieldCell
@@ -1783,7 +1785,7 @@ const CMS = React.memo(function CMS() {
                           <td
                             key={field.id}
                             className="px-4 py-5 text-muted-foreground max-w-50"
-                            onClick={() => !isManualMode && handleEditItem(item)}
+                            onClick={() => handleEditItem(item)}
                           >
                             <span className="block truncate">
                               {plainText || '-'}
@@ -1828,7 +1830,7 @@ const CMS = React.memo(function CMS() {
                           <td
                             key={field.id}
                             className="px-4 py-5 text-muted-foreground max-w-50"
-                            onClick={() => !isManualMode && handleEditItem(item)}
+                            onClick={() => handleEditItem(item)}
                           >
                             <span className="block truncate">
                               {displayValue}
@@ -1843,7 +1845,7 @@ const CMS = React.memo(function CMS() {
                           <td
                             key={field.id}
                             className="px-4 py-5 text-muted-foreground"
-                            onClick={() => !isManualMode && handleEditItem(item)}
+                            onClick={() => handleEditItem(item)}
                           >
                             <div className="flex items-center gap-2">
                               <div
@@ -1863,7 +1865,7 @@ const CMS = React.memo(function CMS() {
                           <td
                             key={field.id}
                             className="px-4 py-5"
-                            onClick={() => !isManualMode && handleEditItem(item)}
+                            onClick={() => handleEditItem(item)}
                           >
                             <div className="pointer-events-none">
                               <Checkbox
@@ -1880,7 +1882,7 @@ const CMS = React.memo(function CMS() {
                         <td
                           key={field.id}
                           className="px-4 py-5 text-muted-foreground"
-                          onClick={() => !isManualMode && handleEditItem(item)}
+                          onClick={() => handleEditItem(item)}
                         >
                           <span className="line-clamp-1 truncate">
                             {value || '-'}

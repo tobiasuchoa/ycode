@@ -7,7 +7,9 @@ interface CollectionItemContextMenuProps {
   children: React.ReactNode;
   isPublishable: boolean;
   hasPublishedVersion: boolean;
+  isModified: boolean;
   isCollectionPublished: boolean;
+  onEdit: () => void;
   onSetAsDraft: () => void;
   onStageForPublish: () => void;
   onSetAsPublished: () => void;
@@ -20,7 +22,9 @@ export default function CollectionItemContextMenu({
   children,
   isPublishable,
   hasPublishedVersion,
+  isModified,
   isCollectionPublished,
+  onEdit,
   onSetAsDraft,
   onStageForPublish,
   onSetAsPublished,
@@ -38,6 +42,10 @@ export default function CollectionItemContextMenu({
         {children}
       </ContextMenuTrigger>
       <ContextMenuContent className="w-48">
+        <ContextMenuItem onClick={onEdit}>
+          Edit CMS item
+        </ContextMenuItem>
+        <ContextMenuSeparator />
         <ContextMenuItem
           disabled={!isPublishable && !hasPublishedVersion}
           onClick={onSetAsDraft}
@@ -45,13 +53,13 @@ export default function CollectionItemContextMenu({
           Set as draft
         </ContextMenuItem>
         <ContextMenuItem
-          disabled={isPublishable && !hasPublishedVersion}
+          disabled={isPublishable || hasPublishedVersion}
           onClick={onStageForPublish}
         >
           Stage for publish
         </ContextMenuItem>
         <ContextMenuItem
-          disabled={!isCollectionPublished || (hasPublishedVersion && isPublishable)}
+          disabled={!isCollectionPublished || (hasPublishedVersion && isPublishable && !isModified)}
           onClick={onSetAsPublished}
         >
           Set as published

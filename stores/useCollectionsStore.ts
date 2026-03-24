@@ -698,13 +698,24 @@ export const useCollectionsStore = create<CollectionsStore>((set, get) => ({
     const previousItems = get().items[collectionId] || [];
     const previousItem = previousItems.find(item => item.id === itemId);
 
-    // Optimistically update item in store (no loading state)
+    // Optimistically set status to "Published · Edited" if the item is currently published
+    const statusFieldId = findStatusFieldId(get().fields[collectionId] || []);
+    const optimisticStatus: Record<string, string> = {};
+    if (statusFieldId && previousItem) {
+      try {
+        const current = JSON.parse(previousItem.values[statusFieldId] || '{}');
+        if (current.is_published) {
+          optimisticStatus[statusFieldId] = buildStatusValue(current.is_publishable, true, true);
+        }
+      } catch { /* non-JSON status value, skip */ }
+    }
+
     set(state => ({
       items: {
         ...state.items,
         [collectionId]: (state.items[collectionId] || []).map(item =>
           item.id === itemId
-            ? { ...item, values, updated_at: new Date().toISOString() }
+            ? { ...item, values: { ...item.values, ...values, ...optimisticStatus }, updated_at: new Date().toISOString() }
             : item
         ),
       },

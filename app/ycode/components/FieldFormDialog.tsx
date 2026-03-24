@@ -190,6 +190,7 @@ export default function FieldFormDialog({
                 value={fieldName}
                 onChange={(e) => setFieldName(e.target.value)}
                 placeholder="Field name"
+                autoComplete="off"
               />
             </div>
           </div>
@@ -351,6 +352,7 @@ export default function FieldFormDialog({
                     value={fieldDefault}
                     onChange={(e) => setFieldDefault(e.target.value)}
                     placeholder="0"
+                    autoComplete="off"
                   />
                 ) : fieldType === 'date' ? (
                   <Input
@@ -358,6 +360,7 @@ export default function FieldFormDialog({
                     type="datetime-local"
                     value={fieldDefault}
                     onChange={(e) => setFieldDefault(e.target.value)}
+                    autoComplete="off"
                   />
                 ) : fieldType === 'email' ? (
                   <Input
@@ -366,6 +369,7 @@ export default function FieldFormDialog({
                     value={fieldDefault}
                     onChange={(e) => setFieldDefault(e.target.value)}
                     placeholder="email@example.com"
+                    autoComplete="off"
                   />
                 ) : fieldType === 'phone' ? (
                   <Input
@@ -374,6 +378,7 @@ export default function FieldFormDialog({
                     value={fieldDefault}
                     onChange={(e) => setFieldDefault(e.target.value)}
                     placeholder="+1 (555) 000-0000"
+                    autoComplete="off"
                   />
                 ) : (
                   <Input
@@ -381,6 +386,7 @@ export default function FieldFormDialog({
                     value={fieldDefault}
                     onChange={(e) => setFieldDefault(e.target.value)}
                     placeholder="Default value"
+                    autoComplete="off"
                   />
                 )}
               </div>

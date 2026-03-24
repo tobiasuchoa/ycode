@@ -3,7 +3,8 @@ import { SUPABASE_QUERY_LIMIT } from '@/lib/supabase-constants';
 import type { CollectionItem, CollectionItemWithValues } from '@/types';
 import { randomUUID } from 'crypto';
 import { getFieldsByCollectionId } from '@/lib/repositories/collectionFieldRepository';
-import { getValuesByFieldId, getValuesByItemIds } from '@/lib/repositories/collectionItemValueRepository';
+import { getValuesByFieldId, getValuesByItemIds, getValuesByItemId } from '@/lib/repositories/collectionItemValueRepository';
+import { generateCollectionItemContentHash } from '@/lib/hash-utils';
 import { castValue } from '../collection-utils';
 import { findStatusFieldId, buildStatusValue } from '@/lib/collection-field-utils';
 
@@ -286,9 +287,28 @@ export async function enrichItemsWithStatus(
 
   if (error) throw new Error(`Failed to fetch published items for status: ${error.message}`);
 
-  const publishedHashMap = new Map(
+  const publishedHashMap = new Map<string, string | null>(
     (publishedRows || []).map(row => [row.id, row.content_hash])
   );
+
+  // Backfill published items that have null content_hash
+  const itemsMissingHash = (publishedRows || []).filter(row => row.content_hash == null);
+  if (itemsMissingHash.length > 0) {
+    const backfillPromises = itemsMissingHash.map(async (row) => {
+      const pubValues = await getValuesByItemId(row.id, true);
+      if (pubValues.length === 0) return;
+      const hash = generateCollectionItemContentHash(
+        pubValues.map(v => ({ field_id: v.field_id, value: v.value }))
+      );
+      publishedHashMap.set(row.id, hash);
+      await client
+        .from('collection_items')
+        .update({ content_hash: hash })
+        .eq('id', row.id)
+        .eq('is_published', true);
+    });
+    await Promise.all(backfillPromises);
+  }
 
   for (const item of items) {
     const publishedHash = publishedHashMap.get(item.id);
@@ -1322,6 +1342,31 @@ export async function publishSingleItem(itemId: string): Promise<void> {
       .update({ is_publishable: true, updated_at: now })
       .eq('id', itemId)
       .eq('is_published', false);
+  }
+
+  // Ensure published fields exist (values FK requires them)
+  const draftFields = await getFieldsByCollectionId(draftItem.collection_id, false);
+  if (draftFields.length > 0) {
+    const fieldsToUpsert = draftFields.map(f => ({
+      id: f.id,
+      name: f.name,
+      key: f.key,
+      type: f.type,
+      default: f.default,
+      fillable: f.fillable,
+      order: f.order,
+      collection_id: f.collection_id,
+      reference_collection_id: f.reference_collection_id,
+      hidden: f.hidden,
+      is_computed: f.is_computed,
+      data: f.data,
+      is_published: true,
+      created_at: f.created_at,
+      updated_at: now,
+    }));
+    await client
+      .from('collection_fields')
+      .upsert(fieldsToUpsert, { onConflict: 'id,is_published' });
   }
 
   // Upsert published item row

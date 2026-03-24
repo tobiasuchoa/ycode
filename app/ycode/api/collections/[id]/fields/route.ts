@@ -78,8 +78,9 @@ export async function POST(
       order: body.order ?? 0,
       reference_collection_id: body.reference_collection_id || null,
       hidden: body.hidden ?? false,
+      is_computed: body.is_computed ?? false,
       data: body.data || {},
-      is_published: false, // Always create as draft
+      is_published: false,
     });
 
     return noCache(

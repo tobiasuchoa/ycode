@@ -517,7 +517,7 @@ export default function RichTextLinkSettings({
       {/* Link Type */}
       <div className="grid grid-cols-3 items-center gap-2">
         <Label className="text-xs text-muted-foreground">Link To</Label>
-        <div className="col-span-2">
+        <div className="col-span-2 *:w-full">
           <Select
             value={linkType === 'none' ? '' : linkType}
             onValueChange={(newVal) => handleLinkTypeChange(newVal as LinkType | 'none')}

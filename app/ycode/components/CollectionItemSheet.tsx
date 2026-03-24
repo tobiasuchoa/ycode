@@ -211,12 +211,14 @@ export default function CollectionItemSheet({
 
   // Reset form when editing item changes
   useEffect(() => {
+    // Only include fillable/visible fields in form state to avoid
+    // sending computed fields (status, ID, timestamps) to the API
+    const editableFields = collectionFields.filter(f => f.fillable && !f.hidden);
+
     if (editingItem) {
-      // Ensure all values are defined (not undefined)
       const values: Record<string, any> = {};
-      collectionFields.forEach(field => {
+      editableFields.forEach(field => {
         let value = editingItem.values[field.id] ?? '';
-        // Normalize boolean values to strings
         if (field.type === 'boolean') {
           value = normalizeBooleanValue(value);
         }
@@ -224,11 +226,9 @@ export default function CollectionItemSheet({
       });
       form.reset(values);
     } else {
-      // Reset with default values for new items
       const defaultValues: Record<string, any> = {};
-      collectionFields.forEach(field => {
+      editableFields.forEach(field => {
         let value = field.default || '';
-        // Normalize boolean values to strings
         if (field.type === 'boolean') {
           value = normalizeBooleanValue(value);
         }
@@ -607,17 +607,20 @@ export default function CollectionItemSheet({
                             <Input
                               type="email"
                               placeholder={field.default || `Enter ${field.name.toLowerCase()}...`}
+                              autoComplete="off"
                               {...formField}
                             />
                           ) : field.type === 'phone' ? (
                             <Input
                               type="tel"
                               placeholder={field.default || `Enter ${field.name.toLowerCase()}...`}
+                              autoComplete="off"
                               {...formField}
                             />
                           ) : field.type === 'date' ? (
                             <Input
                               type="datetime-local"
+                              autoComplete="off"
                               value={formatDateInTimezone(formField.value, timezone, 'datetime-local')}
                               onChange={(e) => {
                                 const utcValue = localDatetimeToUTC(e.target.value, timezone);
@@ -786,6 +789,7 @@ export default function CollectionItemSheet({
                             <Input
                               ref={nameInputRef}
                               placeholder={field.default || `Enter ${field.name.toLowerCase()}...`}
+                              autoComplete="off"
                               name={formField.name}
                               value={formField.value}
                               onChange={formField.onChange}
@@ -794,6 +798,7 @@ export default function CollectionItemSheet({
                           ) : (
                             <Input
                               placeholder={field.default || `Enter ${field.name.toLowerCase()}...`}
+                              autoComplete="off"
                               {...formField}
                             />
                           )}

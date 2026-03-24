@@ -59,8 +59,8 @@ export const FIELD_TYPES_BY_CATEGORY = FIELD_TYPE_CATEGORIES.map(cat => ({
   types: FIELD_TYPES.filter(t => t.category === cat.id),
 }));
 
-/** Valid field type values for API validation */
-export const VALID_FIELD_TYPES: readonly string[] = FIELD_TYPES.map((t) => t.value);
+/** Valid field type values for API validation (includes system types like 'status') */
+export const VALID_FIELD_TYPES: readonly string[] = [...FIELD_TYPES.map((t) => t.value), 'status'];
 
 /** Check if a field type supports setting a default value */
 export function supportsDefaultValue(fieldType: CollectionFieldType | undefined): boolean {
