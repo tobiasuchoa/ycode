@@ -67,6 +67,59 @@ interface TipTapNode {
   attrs?: Record<string, unknown>;
 }
 
+/**
+ * Parse inline HTML into TipTap text nodes, preserving <a> links as richTextLink marks.
+ * All other tags are stripped, keeping only their text content.
+ */
+function parseInlineNodes(html: string): TipTapNode[] {
+  const nodes: TipTapNode[] = [];
+  const linkRegex = /<a\s[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = linkRegex.exec(html)) !== null) {
+    if (match.index > lastIndex) {
+      const raw = html.slice(lastIndex, match.index).replace(/<[^>]+>/g, '');
+      const text = decodeHtmlEntities(raw);
+      if (text.trim()) nodes.push({ type: 'text', text });
+    }
+
+    const href = match[1];
+    const linkText = decodeHtmlEntities(match[2].replace(/<[^>]+>/g, ''));
+    if (linkText.trim()) {
+      const targetMatch = match[0].match(/target=["']([^"']+)["']/i);
+      nodes.push({
+        type: 'text',
+        text: linkText,
+        marks: [{
+          type: 'richTextLink',
+          attrs: {
+            type: 'url',
+            url: { type: 'dynamic_text', data: { content: href } },
+            target: targetMatch?.[1] || null,
+          },
+        }],
+      });
+    }
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < html.length) {
+    const raw = html.slice(lastIndex).replace(/<[^>]+>/g, '');
+    const text = decodeHtmlEntities(raw);
+    if (text.trim()) nodes.push({ type: 'text', text });
+  }
+
+  // Trim only the outermost edges, preserving internal spacing
+  if (nodes.length > 0) {
+    nodes[0].text = nodes[0].text!.replace(/^\s+/, '');
+    nodes[nodes.length - 1].text = nodes[nodes.length - 1].text!.replace(/\s+$/, '');
+  }
+
+  return nodes.filter(n => n.text);
+}
+
 /** Extract src and alt from an <img> tag and return a richTextImage node */
 function parseImgTag(imgHtml: string): TipTapNode | null {
   const srcMatch = imgHtml.match(/src=["']([^"']+)["']/i);
@@ -83,7 +136,6 @@ function parseImgTag(imgHtml: string): TipTapNode | null {
  * Images are extracted as sibling richTextImage nodes so they are block-level.
  */
 function pushParagraphWithImages(innerHtml: string, content: TipTapNode[]): void {
-  // Split on img tags, keeping the img tags in the results
   const parts = innerHtml.split(/(<img\s[^>]*\/?>)/gi);
   for (const part of parts) {
     if (!part.trim()) continue;
@@ -91,12 +143,9 @@ function pushParagraphWithImages(innerHtml: string, content: TipTapNode[]): void
       const imgNode = parseImgTag(part);
       if (imgNode) content.push(imgNode);
     } else {
-      const text = decodeHtmlEntities(part.replace(/<[^>]+>/g, '').trim());
-      if (text) {
-        content.push({
-          type: 'paragraph',
-          content: [{ type: 'text', text }],
-        });
+      const inlineNodes = parseInlineNodes(part);
+      if (inlineNodes.length > 0) {
+        content.push({ type: 'paragraph', content: inlineNodes });
       }
     }
   }
@@ -145,12 +194,9 @@ function htmlToTipTapJSON(html: string): TipTapNode {
     if (match.index > lastIndex) {
       const textBetween = cleanHtml.slice(lastIndex, match.index).trim();
       if (textBetween) {
-        const plainText = decodeHtmlEntities(textBetween.replace(/<[^>]+>/g, '').trim());
-        if (plainText) {
-          content.push({
-            type: 'paragraph',
-            content: [{ type: 'text', text: plainText }],
-          });
+        const inlineNodes = parseInlineNodes(textBetween);
+        if (inlineNodes.length > 0) {
+          content.push({ type: 'paragraph', content: inlineNodes });
         }
       }
     }
@@ -194,19 +240,15 @@ function htmlToTipTapJSON(html: string): TipTapNode {
           if (imgNode) trailingImages.push(imgNode);
         }
 
-        // Strip inner <p>, <div>, and all remaining tags for text
+        // Strip <img> tags (already extracted above), then strip <p>/<div> wrappers
+        itemContent = itemContent.replace(/<img\s[^>]*\/?>/gi, '');
         itemContent = itemContent.replace(/<\/?(?:p|div)[^>]*>/gi, '').trim();
-        const itemText = decodeHtmlEntities(itemContent.replace(/<[^>]+>/g, '').trim());
+        const inlineNodes = parseInlineNodes(itemContent);
 
-        if (itemText) {
+        if (inlineNodes.length > 0) {
           listItems.push({
             type: 'listItem',
-            content: [
-              {
-                type: 'paragraph',
-                content: [{ type: 'text', text: itemText }],
-              },
-            ],
+            content: [{ type: 'paragraph', content: inlineNodes }],
           });
         }
       }
@@ -220,30 +262,23 @@ function htmlToTipTapJSON(html: string): TipTapNode {
       // Append extracted images after the list
       content.push(...trailingImages);
     } else if (tagName.match(/^h[1-6]$/)) {
-      // Heading
       const level = parseInt(tagName[1], 10);
       const innerContent = fullMatch.replace(/<\/?h[1-6][^>]*>/gi, '').trim();
-      const textContent = decodeHtmlEntities(innerContent.replace(/<[^>]+>/g, '').trim());
-      if (textContent) {
+      const inlineNodes = parseInlineNodes(innerContent);
+      if (inlineNodes.length > 0) {
         content.push({
           type: 'heading',
           attrs: { level },
-          content: [{ type: 'text', text: textContent }],
+          content: inlineNodes,
         });
       }
     } else if (tagName === 'blockquote') {
-      // Blockquote
       const innerContent = fullMatch.replace(/<\/?blockquote[^>]*>/gi, '').trim();
-      const textContent = decodeHtmlEntities(innerContent.replace(/<[^>]+>/g, '').trim());
-      if (textContent) {
+      const inlineNodes = parseInlineNodes(innerContent);
+      if (inlineNodes.length > 0) {
         content.push({
           type: 'blockquote',
-          content: [
-            {
-              type: 'paragraph',
-              content: [{ type: 'text', text: textContent }],
-            },
-          ],
+          content: [{ type: 'paragraph', content: inlineNodes }],
         });
       }
     }

@@ -111,10 +111,14 @@ export function CSVImportDialog({
     abortRef.current = true;
   }, []);
 
+  // Reset on open so the dialog always starts fresh
+  useEffect(() => {
+    if (open) resetState();
+  }, [open, resetState]);
+
   // Handle close — blocked while import is in progress
   const handleClose = () => {
     if (importing && step === 'progress') return;
-    resetState();
     onOpenChange(false);
   };
 
@@ -463,10 +467,7 @@ export function CSVImportDialog({
                 </div>
                 <div className="h-2 w-full overflow-hidden rounded-full bg-input">
                   {progressPercent === 0 ? (
-                    <div
-                      className="h-full w-1/3 rounded-full bg-primary/70"
-                      style={{ animation: 'indeterminate 1.5s ease-in-out infinite' }}
-                    />
+                    <div className="h-full w-1/3 animate-indeterminate rounded-full bg-primary/70" />
                   ) : (
                     <div
                       className="h-full bg-primary/70 transition-all duration-300"

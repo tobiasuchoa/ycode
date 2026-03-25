@@ -45,6 +45,7 @@
   --radius-xl: calc(var(--radius) + 4px);
 
   --animate-shimmer: shimmer 2s ease-in-out infinite;
+  --animate-indeterminate: indeterminate 1.5s ease-in-out infinite;
 }
 
 @keyframes shimmer {
