@@ -42,6 +42,7 @@ import { extractPlainTextFromTiptap } from '@/lib/tiptap-utils';
 import { parseCollectionLinkValue, resolveCollectionLinkValue } from '@/lib/link-utils';
 import { useEditorUrl } from '@/hooks/use-editor-url';
 import FieldsDropdown from './FieldsDropdown';
+import AirtableSyncButton from './AirtableSyncButton';
 import CollectionItemContextMenu from './CollectionItemContextMenu';
 import FieldFormDialog from './FieldFormDialog';
 import type { FieldFormData } from './FieldFormDialog';
@@ -2066,6 +2067,13 @@ const CMS = React.memo(function CMS() {
             </Button>
           )}
 
+          {selectedCollectionId && (
+            <AirtableSyncButton
+              collectionId={selectedCollectionId}
+              onSyncComplete={() => loadItems(selectedCollectionId, currentPage, pageSize, currentSortBy, currentSortOrder)}
+            />
+          )}
+
           <FieldsDropdown
             fields={collectionFields}
             searchQuery={fieldSearchQuery}
@@ -2074,15 +2082,15 @@ const CMS = React.memo(function CMS() {
             onReorder={handleReorderFields}
           />
 
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setImportDialogOpen(true)}
-              disabled={!selectedCollectionId || collectionFields.length === 0}
-            >
-              <Icon name="upload" />
-              Import
-            </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setImportDialogOpen(true)}
+            disabled={!selectedCollectionId || collectionFields.length === 0}
+          >
+            <Icon name="upload" />
+            Import
+          </Button>
 
           <Button
             size="sm"

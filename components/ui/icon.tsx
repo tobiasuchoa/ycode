@@ -9,7 +9,7 @@ export interface IconProps extends React.SVGProps<SVGSVGElement> {
     'x' | 'layers' | 'database' | 'plus' | 'chevronCombo' | 'chevronDown' | 'chevronUp' | 'check' | 'textAlignLeft' | 'textAlignRight' | 'textAlignCenter' | 'textAlignJustify' | 'individualBorders'
     | 'borders' | 'borderTopLeft' | 'letterSpacing' | 'lineHeight' | 'columns' | 'rows' | 'grid' | 'alignStart' | 'alignCenter' | 'alignEnd' | 'alignStretch' | 'verticalGap'
     | 'horizontalGap' | 'link' | 'paddingSide' | 'block' | 'section' | 'container' | 'separator' | 'image' | 'icon' | 'video' | 'text' | 'layout' | 'heading' | 'type'
-    | 'file-text' | 'edit' | 'box' | 'chevronRight' | 'minSize' | 'maxSize' | 'undo' | 'redo' | 'page' | 'dynamicPage' | 'homepage' | 'folder' | 'dotsHorizontal' | 'refresh'
+    | 'file-text' | 'edit' | 'box' | 'chevronRight' | 'chevronLeft' | 'minSize' | 'maxSize' | 'undo' | 'redo' | 'page' | 'dynamicPage' | 'homepage' | 'folder' | 'dotsHorizontal' | 'refresh'
     | 'more' | 'copy' | 'component' | 'arrowLeft' | 'bold' | 'italic' | 'underline' | 'strikethrough' | 'subscript' | 'superscript' | 'quote' | 'listOrdered' | 'listUnordered'
     | 'code' | 'pencil' | 'eye' | 'eye-off' | 'trash' | 'grip-vertical' | 'upload' | 'search' | 'rich-text' | 'audio' | 'cursor-default' | 'form' | 'input' | 'textarea'
     | 'select' | 'checkbox' | 'radio' | 'zap' | 'zap-outline' | 'loopAlternate' | 'loopRepeat' | 'globe' | 'ease-linear' | 'ease-in' | 'ease-in-out' | 'ease-out' | 'ease-back-in'
@@ -669,10 +669,16 @@ const ICONS: Record<IconProps['name'], React.ReactNode> = {
       />
     </>
   ),
+  chevronLeft: (
+      <>
+          <path
+            d="M7.7479998,1.79289322 L8.45510658,2.5 L4.955,5.99989322 L8.45510658,9.5 L7.7479998,10.2071068 L4.247,6.70689322 L3.54,6.00089302 L4.159,5.38089322 L4.24720042,5.29209384 L4.248,5.29289322 L7.7479998,1.79289322 Z"
+          />
+      </>
+  ),
   chevronRight: (
       <>
           <path
-            xmlns="http://www.w3.org/2000/svg"
             d="M7.7479998,1.79289322 L8.45510658,2.5 L4.955,5.99989322 L8.45510658,9.5 L7.7479998,10.2071068 L4.247,6.70689322 L3.54,6.00089302 L4.159,5.38089322 L4.24720042,5.29209384 L4.248,5.29289322 L7.7479998,1.79289322 Z"
             transform="translate(5.9976, 6) scale(-1, 1) translate(-5.9976, -6)"
           />

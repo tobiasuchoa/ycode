@@ -57,6 +57,7 @@ import type { Asset, CollectionItemWithValues } from '@/types';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { getSyncedFieldIds, fetchCachedConnections } from '@/lib/apps/airtable/client';
 
 interface CollectionItemSheetProps {
   open: boolean;
@@ -116,6 +117,18 @@ export default function CollectionItemSheet({
     () => findStatusFieldId(collectionFields),
     [collectionFields]
   );
+
+  // Fields managed by Airtable sync — disabled in the form
+  const [syncedFieldIds, setSyncedFieldIds] = useState<Set<string>>(
+    () => getSyncedFieldIds(collectionId)
+  );
+
+  useEffect(() => {
+    setSyncedFieldIds(getSyncedFieldIds(collectionId));
+    fetchCachedConnections().then(() => {
+      setSyncedFieldIds(getSyncedFieldIds(collectionId));
+    });
+  }, [collectionId]);
 
   // Check if the current page is a dynamic page using this collection
   const currentPage = currentPageId ? pages.find(p => p.id === currentPageId) : null;
@@ -551,15 +564,26 @@ export default function CollectionItemSheet({
             <div className="flex-1 flex flex-col gap-6">
               {collectionFields
                 .filter(f => f.fillable)
-                .map((field) => (
+                .map((field) => {
+                  const isSynced = syncedFieldIds.has(field.id);
+
+                  return (
                   <FormField
                     key={field.id}
                     control={form.control}
                     name={field.id}
                     render={({ field: formField }) => (
                       <FormItem>
-                        <FormLabel>{field.name}</FormLabel>
+                        <div className="flex items-center gap-2">
+                          <FormLabel>{field.name}</FormLabel>
+                          {isSynced && (
+                            <span className="text-[10px] text-muted-foreground leading-none">
+                              Synced from Airtable
+                            </span>
+                          )}
+                        </div>
                         <FormControl>
+                          <div className={isSynced ? 'opacity-50 pointer-events-none' : undefined}>
                           {field.type === 'rich_text' ? (
                             <div>
                               <RichTextEditor
@@ -812,12 +836,14 @@ export default function CollectionItemSheet({
                               {...formField}
                             />
                           )}
+                          </div>
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                ))}
+                  );
+                })}
             </div>
           </form>
         </Form>

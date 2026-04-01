@@ -43,6 +43,7 @@ import { APP_CATEGORIES } from '@/lib/apps/registry';
 import { useSettingsStore } from '@/stores/useSettingsStore';
 import { MAILERLITE_SUBSCRIBER_FIELDS } from '@/lib/apps/mailerlite/types';
 import type { MailerLiteConnection, MailerLiteFieldMapping } from '@/lib/apps/mailerlite/types';
+import AirtableSettings from './airtable-settings';
 
 // =============================================================================
 // Types
@@ -333,6 +334,8 @@ export default function AppsPage() {
     if (appId === 'mailerlite') {
       loadMailerLiteSettings();
       loadGroupsAndForms();
+    } else if (appId === 'airtable') {
+      // AirtableSettings handles its own loading
     } else if (TOKEN_APP_CONFIGS[appId]) {
       loadTokenApp(appId);
     }
@@ -1069,6 +1072,13 @@ export default function AppsPage() {
               </>
             );
           })()}
+
+          {selectedAppId === 'airtable' && (
+            <AirtableSettings
+              onDisconnect={() => updateAppStatus('airtable', false)}
+              onConnectionChange={(connected) => updateAppStatus('airtable', connected)}
+            />
+          )}
 
           {selectedAppId === 'mailerlite' && (
             <>

@@ -169,6 +169,8 @@ export async function GET(
   }
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** Extract unique asset IDs from item values based on asset-type fields. */
 function extractAssetIdsFromItems(
   items: CollectionItemWithValues[],
@@ -191,9 +193,9 @@ function extractAssetIdsFromItems(
       if (multiAssetFieldIds.has(fieldId)) {
         const arr = Array.isArray(value) ? value : [];
         for (const v of arr) {
-          if (typeof v === 'string' && v) ids.add(v);
+          if (typeof v === 'string' && v && UUID_RE.test(v)) ids.add(v);
         }
-      } else if (typeof value === 'string') {
+      } else if (typeof value === 'string' && UUID_RE.test(value)) {
         ids.add(value);
       }
     }

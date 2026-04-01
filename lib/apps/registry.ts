@@ -11,6 +11,7 @@
 
 import type { StaticImageData } from 'next/image';
 
+import airtableLogo from './airtable/logo.svg';
 import mailerliteLogo from './mailerlite/logo.svg';
 import mailchimpLogo from './mailchimp/logo.svg';
 import zapierLogo from './zapier/logo.svg';
@@ -22,10 +23,11 @@ import googleMapsEmbedLogo from './google-maps-embed/logo.png';
 // Types
 // =============================================================================
 
-export type AppCategory = 'popular' | 'marketing' | 'automation' | 'analytics' | 'email' | 'maps' | 'other';
+export type AppCategory = 'popular' | 'cms-data' | 'marketing' | 'automation' | 'analytics' | 'email' | 'maps' | 'other';
 
 export const APP_CATEGORIES: { value: AppCategory; label: string }[] = [
   { value: 'popular', label: 'Popular' },
+  { value: 'cms-data', label: 'CMS Data' },
   { value: 'marketing', label: 'Marketing' },
   { value: 'automation', label: 'Automation' },
   { value: 'analytics', label: 'Analytics' },
@@ -54,6 +56,14 @@ export interface AppDefinition {
 // =============================================================================
 
 export const apps: AppDefinition[] = [
+  {
+    id: 'airtable',
+    name: 'Airtable',
+    description: 'One-way sync from Airtable tables to your Ycode collections with real-time webhook support.',
+    logo: airtableLogo,
+    categories: ['popular', 'cms-data'],
+    implemented: true,
+  },
   {
     id: 'mailerlite',
     name: 'MailerLite',
