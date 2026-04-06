@@ -115,6 +115,19 @@ export async function getTenantIdFromHeaders(): Promise<string | null> {
 }
 
 /**
+ * Run a function with explicit tenant context.
+ *
+ * Opensource: no-op passthrough (single-tenant).
+ * Cloud overlay: overridden to propagate tenantId via AsyncLocalStorage.
+ */
+export async function runWithTenantContext<T>(
+  tenantId: string,
+  fn: () => Promise<T>
+): Promise<T> {
+  return fn();
+}
+
+/**
  * Execute raw SQL query
  */
 export async function executeSql(sql: string): Promise<{ success: boolean; error?: string }> {
