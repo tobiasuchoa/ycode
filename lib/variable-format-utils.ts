@@ -15,6 +15,12 @@ export interface DateFormatPreset {
   label: string;
   options: Intl.DateTimeFormatOptions;
   locale?: string;
+  /** Helper text shown next to the preview (e.g. "Hour (12h)") */
+  detail?: string;
+  /** Strip leading zero from the formatted output (for Intl quirks like 24h numeric hours) */
+  stripLeadingZero?: boolean;
+  /** Extract a single part from formatToParts instead of using the full formatted string */
+  extractPart?: Intl.DateTimeFormatPartTypes;
 }
 
 export interface FormatPresetSection<T> {
@@ -108,6 +114,59 @@ export const DATE_FORMAT_SECTIONS: FormatPresetSection<DateFormatPreset>[] = [
     ],
   },
   {
+    title: 'Date parts',
+    presets: [
+      {
+        id: 'part-weekday-long',
+        label: 'Tuesday',
+        detail: 'Day name',
+        options: { weekday: 'long' },
+      },
+      {
+        id: 'part-weekday-short',
+        label: 'Tue',
+        detail: 'Day name (short)',
+        options: { weekday: 'short' },
+      },
+      {
+        id: 'part-month-long',
+        label: 'April',
+        detail: 'Month name',
+        options: { month: 'long' },
+      },
+      {
+        id: 'part-month-short',
+        label: 'Apr',
+        detail: 'Month name (short)',
+        options: { month: 'short' },
+      },
+      {
+        id: 'part-day',
+        label: '7',
+        detail: 'Day',
+        options: { day: 'numeric' },
+      },
+      {
+        id: 'part-day-padded',
+        label: '07',
+        detail: 'Day (zero-padded)',
+        options: { day: '2-digit' },
+      },
+      {
+        id: 'part-year',
+        label: '2026',
+        detail: 'Year',
+        options: { year: 'numeric' },
+      },
+      {
+        id: 'part-year-short',
+        label: '26',
+        detail: 'Year (short)',
+        options: { year: '2-digit' },
+      },
+    ],
+  },
+  {
     title: 'Time',
     presets: [
       {
@@ -122,11 +181,67 @@ export const DATE_FORMAT_SECTIONS: FormatPresetSection<DateFormatPreset>[] = [
       },
     ],
   },
+  {
+    title: 'Time parts',
+    presets: [
+      {
+        id: 'part-hour-12',
+        label: '9',
+        detail: 'Hour (12h)',
+        options: { hour: 'numeric', hour12: true },
+        extractPart: 'hour',
+      },
+      {
+        id: 'part-hour-12-padded',
+        label: '09',
+        detail: 'Hour (12h, zero-padded)',
+        options: { hour: '2-digit', hour12: true },
+        extractPart: 'hour',
+      },
+      {
+        id: 'part-hour-24-short',
+        label: '9',
+        detail: 'Hour (24h)',
+        options: { hour: 'numeric', hour12: false },
+        extractPart: 'hour',
+        stripLeadingZero: true,
+      },
+      {
+        id: 'part-hour-24',
+        label: '09',
+        detail: 'Hour (24h, zero-padded)',
+        options: { hour: '2-digit', hour12: false },
+        extractPart: 'hour',
+      },
+      {
+        id: 'part-ampm',
+        label: 'AM',
+        detail: 'AM / PM',
+        options: { hour: 'numeric', hour12: true },
+        extractPart: 'dayPeriod',
+      },
+      {
+        id: 'part-minute',
+        label: '8',
+        detail: 'Minute',
+        options: { hour: 'numeric', minute: 'numeric', hour12: false },
+        extractPart: 'minute',
+        stripLeadingZero: true,
+      },
+      {
+        id: 'part-minute-padded',
+        label: '08',
+        detail: 'Minute (zero-padded)',
+        options: { hour: 'numeric', minute: '2-digit', hour12: false },
+        extractPart: 'minute',
+      },
+    ],
+  },
 ];
 
-/** Sections for date_only fields (excludes datetime and time presets) */
+/** Sections for date_only fields (excludes datetime, time, and time parts) */
 export const DATE_ONLY_FORMAT_SECTIONS: FormatPresetSection<DateFormatPreset>[] =
-  DATE_FORMAT_SECTIONS.filter(s => s.title === 'Date');
+  DATE_FORMAT_SECTIONS.filter(s => s.title === 'Date' || s.title === 'Date parts');
 
 /** Flat list of all date presets (used for lookup by ID) */
 export const DATE_FORMAT_PRESETS: DateFormatPreset[] =
@@ -284,10 +399,14 @@ export function formatDateWithPreset(
   }
 
   try {
-    return new Intl.DateTimeFormat(preset.locale || 'en-US', {
+    const formatter = new Intl.DateTimeFormat(preset.locale || 'en-US', {
       timeZone: timezone,
       ...preset.options,
-    }).format(dateObj);
+    });
+    const result = preset.extractPart
+      ? (formatter.formatToParts(dateObj).find(p => p.type === preset.extractPart)?.value ?? '')
+      : formatter.format(dateObj);
+    return preset.stripLeadingZero ? result.replace(/^0/, '') : result;
   } catch {
     return '';
   }
@@ -311,14 +430,20 @@ export function formatNumberWithPreset(
   }
 }
 
-/**
- * Generate a live preview label for a date format preset using the current date
- */
+// Fixed sample date for all format previews so the dropdown is consistent
+// Tue Apr 7 2026 09:08 — uses single-digit components to show zero-padding differences
+const PREVIEW_DATE = new Date(2026, 3, 7, 9, 8);
+
+/** Generate a preview label for a date format preset */
 export function getDateFormatPreview(preset: DateFormatPreset): string {
   try {
-    return new Intl.DateTimeFormat(preset.locale || 'en-US', {
+    const formatter = new Intl.DateTimeFormat(preset.locale || 'en-US', {
       ...preset.options,
-    }).format(new Date());
+    });
+    const result = preset.extractPart
+      ? (formatter.formatToParts(PREVIEW_DATE).find(p => p.type === preset.extractPart)?.value ?? '')
+      : formatter.format(PREVIEW_DATE);
+    return preset.stripLeadingZero ? result.replace(/^0/, '') : result;
   } catch {
     return preset.label;
   }

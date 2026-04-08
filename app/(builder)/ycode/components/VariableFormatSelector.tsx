@@ -25,6 +25,10 @@ import {
   type NumberFormatPreset,
 } from '@/lib/variable-format-utils';
 
+function getDetail(preset: DateFormatPreset | NumberFormatPreset): string | undefined {
+  return 'detail' in preset ? (preset as DateFormatPreset).detail : undefined;
+}
+
 interface VariableFormatSelectorProps {
   fieldType: string | null | undefined;
   currentFormat?: string;
@@ -104,7 +108,7 @@ export default function VariableFormatSelector({
         onClick={(e) => e.stopPropagation()}
         onPointerDownOutside={(e) => e.stopPropagation()}
       >
-        <div className="flex flex-col">
+        <div className="flex flex-col max-h-[min(60vh)] overflow-y-auto">
           {sections.map((section) => (
             <div key={section.title}>
               <p className="text-[10px] font-medium text-muted-foreground px-2 py-1.5 uppercase tracking-wider">
@@ -119,7 +123,12 @@ export default function VariableFormatSelector({
                   )}
                   onClick={() => handleSelect(preset.id)}
                 >
-                  <span className="flex-1 truncate">{getPreview(preset)}</span>
+                  <span className="flex-1 truncate">
+                    {getPreview(preset)}
+                    {getDetail(preset) && (
+                      <span className="text-muted-foreground ml-1.5">{getDetail(preset)}</span>
+                    )}
+                  </span>
                   {currentFormat === preset.id && (
                     <Icon
                       name="check"

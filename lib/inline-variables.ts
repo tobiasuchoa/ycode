@@ -22,7 +22,8 @@ export const INLINE_VARIABLE_REGEX = /<ycode-inline-variable>([\s\S]*?)<\/ycode-
 export function resolveInlineVariables(
   text: string,
   collectionItem: CollectionItemWithValues | null | undefined,
-  timezone: string = 'UTC'
+  timezone: string = 'UTC',
+  rawValues?: Record<string, string>
 ): string {
   if (!collectionItem || !collectionItem.values) {
     return text;
@@ -34,7 +35,12 @@ export function resolveInlineVariables(
 
       if (parsed.type === 'field' && parsed.data?.field_id) {
         const fieldValue = collectionItem.values[parsed.data.field_id];
-        return formatFieldValue(fieldValue, parsed.data.field_type, timezone, parsed.data.format);
+        // Use raw (unformatted ISO) values for custom format presets,
+        // since values may be pre-formatted by formatDateFieldsInItemValues on SSR
+        const value = (parsed.data.format && rawValues)
+          ? (rawValues[parsed.data.field_id] ?? fieldValue)
+          : fieldValue;
+        return formatFieldValue(value, parsed.data.field_type, timezone, parsed.data.format);
       }
     } catch {
       // Invalid JSON or not a field variable, leave as is

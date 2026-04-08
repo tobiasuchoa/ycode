@@ -1060,7 +1060,7 @@ async function injectCollectionData(
         content_hash: null,
         values: enhancedValues,
       };
-      const resolved = resolveInlineVariablesWithRelationships(textContent, mockItem, timezone);
+      const resolved = resolveInlineVariablesWithRelationships(textContent, mockItem, timezone, rawItemValues);
 
       resolvedVars.text = {
         type: 'dynamic_text',
@@ -1176,7 +1176,8 @@ async function injectCollectionData(
 function resolveInlineVariablesWithRelationships(
   text: string,
   collectionItem: CollectionItemWithValues,
-  timezone: string = 'UTC'
+  timezone: string = 'UTC',
+  rawValues?: Record<string, string>
 ): string {
   if (!collectionItem || !collectionItem.values) {
     return text;
@@ -1198,7 +1199,10 @@ function resolveInlineVariablesWithRelationships(
 
         const fieldValue = collectionItem.values[fullPath];
         if (parsed.data.format && fieldValue) {
-          return formatFieldValue(fieldValue, parsed.data.field_type, timezone, parsed.data.format);
+          // Use raw (unformatted ISO) values for custom format presets,
+          // since itemValues are pre-formatted by formatDateFieldsInItemValues
+          const rawValue = rawValues?.[fullPath] ?? fieldValue;
+          return formatFieldValue(rawValue, parsed.data.field_type, timezone, parsed.data.format);
         }
         return fieldValue || '';
       }
@@ -2744,7 +2748,7 @@ async function injectCollectionDataForHtml(
         content_hash: null,
         values: enhancedValues,
       };
-      const resolved = resolveInlineVariables(textContent, mockItem, timezone);
+      const resolved = resolveInlineVariables(textContent, mockItem, timezone, rawItemValues);
       resolvedVars.text = {
         type: 'dynamic_text',
         data: { content: resolved },
