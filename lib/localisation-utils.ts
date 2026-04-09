@@ -621,9 +621,17 @@ export function extractCmsTranslatableItems(
 
     const fieldValue = collectionItem.values[field.id];
 
-    // Skip empty values
-    if (!fieldValue || !fieldValue.trim()) {
+    // Skip empty values — rich_text values may be parsed Tiptap objects
+    if (!fieldValue) {
       continue;
+    }
+
+    let contentValue: string;
+    if (typeof fieldValue === 'object') {
+      contentValue = JSON.stringify(fieldValue);
+    } else {
+      contentValue = String(fieldValue).trim();
+      if (!contentValue) continue;
     }
 
     const isSlugField = field.key === 'slug';
@@ -640,7 +648,7 @@ export function extractCmsTranslatableItems(
       source_id: collectionItem.id,
       content_key: contentKey,
       content_type: field.type === 'rich_text' ? 'richtext' : 'text',
-      content_value: fieldValue.trim(),
+      content_value: contentValue,
       info: {
         icon: field.type === 'rich_text' ? 'type' : 'text',
         label: field.name,

@@ -323,8 +323,8 @@ export const fetchPageByPath = cache(async function fetchPageByPath(
     // If path is empty after locale detection (e.g., "/fr/" -> "fr" -> ""),
     // try to fetch the homepage
     if (targetPath === '' && detectedLocale) {
-      // Pass preloaded components to avoid redundant query
-      const homepageData = await fetchHomepage(isPublished, paginationContext, components);
+      // Pass preloaded components and translations so CMS content is translated
+      const homepageData = await fetchHomepage(isPublished, paginationContext, components, tenantId, translations);
       if (homepageData) {
         // Components and collection layers are already resolved by fetchHomepage
         // Apply translations for the detected locale
@@ -663,7 +663,8 @@ export const fetchHomepage = cache(async function fetchHomepage(
   isPublished: boolean,
   paginationContext?: PaginationContext,
   preloadedComponents?: Component[],
-  tenantId?: string
+  tenantId?: string,
+  translations?: Record<string, Translation>
 ): Promise<Pick<PageData, 'page' | 'pageLayers' | 'components' | 'locale' | 'availableLocales' | 'translations'> | null> {
   try {
     const supabase = await getSupabaseAdmin(tenantId);
@@ -709,11 +710,11 @@ export const fetchHomepage = cache(async function fetchHomepage(
 
     // Resolve collection layers server-side (for both draft and published)
     let resolvedLayers = layersWithComponents.length > 0
-      ? await resolveCollectionLayers(layersWithComponents, isPublished, undefined, paginationContext, undefined)
+      ? await resolveCollectionLayers(layersWithComponents, isPublished, undefined, paginationContext, translations)
       : [];
 
     // Resolve collections inside rich text embedded components
-    resolvedLayers = await resolveRichTextCollections(resolvedLayers, components, isPublished);
+    resolvedLayers = await resolveRichTextCollections(resolvedLayers, components, isPublished, translations);
 
     // Resolve all AssetVariables to URLs server-side (prevents client-side API calls)
     const resolved = await resolveAllAssets(resolvedLayers, isPublished, components);
@@ -726,9 +727,9 @@ export const fetchHomepage = cache(async function fetchHomepage(
         layers: resolvedLayers,
       },
       components, // Layers are pre-resolved; components passed for rich-text embedded rendering
-      locale: null, // Homepage accessed without locale prefix
+      locale: null,
       availableLocales: availableLocales as Locale[] || [],
-      translations: {}, // Homepage accessed without locale prefix
+      translations: translations || {},
     };
   } catch (error) {
     return null;
@@ -753,8 +754,13 @@ function injectTranslatedText(
     const updates: Partial<Layer> = {};
     const variableUpdates: Partial<Layer['variables']> = {};
 
+    // Use original layer ID for translation lookups — after resolveComponents,
+    // child layer IDs are transformed to instance-specific IDs (e.g., "instanceId-childId")
+    // but translations are stored with the original component layer IDs
+    const translationLayerId = layer._originalLayerId || layer.id;
+
     // 1. Inject text translation
-    const textTranslationKey = buildLayerTranslationKey(pageId, `layer:${layer.id}:text`, layer._masterComponentId);
+    const textTranslationKey = buildLayerTranslationKey(pageId, `layer:${translationLayerId}:text`, layer._masterComponentId);
     const textTranslation = getTranslationByKey(translations, textTranslationKey);
 
     const textValue = getTranslationValue(textTranslation);
@@ -770,9 +776,9 @@ function injectTranslatedText(
     // 2. Inject asset translations for media layers
     // Image layer - translate src and alt text
     if (layer.name === 'image') {
-      const imageSrcKey = buildLayerTranslationKey(pageId, `layer:${layer.id}:image_src`, layer._masterComponentId);
+      const imageSrcKey = buildLayerTranslationKey(pageId, `layer:${translationLayerId}:image_src`, layer._masterComponentId);
       const imageSrcTranslation = getTranslationByKey(translations, imageSrcKey);
-      const imageAltKey = buildLayerTranslationKey(pageId, `layer:${layer.id}:image_alt`, layer._masterComponentId);
+      const imageAltKey = buildLayerTranslationKey(pageId, `layer:${translationLayerId}:image_alt`, layer._masterComponentId);
       const imageAltTranslation = getTranslationByKey(translations, imageAltKey);
 
       if (imageSrcTranslation || imageAltTranslation) {
@@ -796,9 +802,9 @@ function injectTranslatedText(
 
     // Video layer - translate src and poster
     if (layer.name === 'video') {
-      const videoSrcKey = buildLayerTranslationKey(pageId, `layer:${layer.id}:video_src`, layer._masterComponentId);
+      const videoSrcKey = buildLayerTranslationKey(pageId, `layer:${translationLayerId}:video_src`, layer._masterComponentId);
       const videoSrcTranslation = getTranslationByKey(translations, videoSrcKey);
-      const videoPosterKey = buildLayerTranslationKey(pageId, `layer:${layer.id}:video_poster`, layer._masterComponentId);
+      const videoPosterKey = buildLayerTranslationKey(pageId, `layer:${translationLayerId}:video_poster`, layer._masterComponentId);
       const videoPosterTranslation = getTranslationByKey(translations, videoPosterKey);
 
       if (videoSrcTranslation || videoPosterTranslation) {
@@ -818,7 +824,7 @@ function injectTranslatedText(
 
     // Audio layer - translate src
     if (layer.name === 'audio') {
-      const audioSrcKey = buildLayerTranslationKey(pageId, `layer:${layer.id}:audio_src`, layer._masterComponentId);
+      const audioSrcKey = buildLayerTranslationKey(pageId, `layer:${translationLayerId}:audio_src`, layer._masterComponentId);
       const audioSrcTranslation = getTranslationByKey(translations, audioSrcKey);
 
       if (audioSrcTranslation && audioSrcTranslation.content_value) {
@@ -830,7 +836,7 @@ function injectTranslatedText(
 
     // Icon layer - translate src
     if (layer.name === 'icon') {
-      const iconSrcKey = buildLayerTranslationKey(pageId, `layer:${layer.id}:icon_src`, layer._masterComponentId);
+      const iconSrcKey = buildLayerTranslationKey(pageId, `layer:${translationLayerId}:icon_src`, layer._masterComponentId);
       const iconSrcTranslation = getTranslationByKey(translations, iconSrcKey);
 
       if (iconSrcTranslation && iconSrcTranslation.content_value) {
