@@ -11,6 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { CodeEditor } from '@/components/ui/code-editor';
+import { toast } from 'sonner';
 
 interface ExportHtmlDialogProps {
   open: boolean;
@@ -31,14 +32,7 @@ export default function ExportHtmlDialog({
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      const textarea = document.createElement('textarea');
-      textarea.value = html;
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textarea);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      toast.error('Failed to copy — please select the code and copy manually');
     }
   };
 

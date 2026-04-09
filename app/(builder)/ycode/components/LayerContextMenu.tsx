@@ -574,7 +574,14 @@ export default function LayerContextMenu({
   };
 
   const handleImportHtml = (html: string) => {
-    const importedLayers = htmlToLayers(html);
+    let importedLayers: Layer[];
+    try {
+      importedLayers = htmlToLayers(html);
+    } catch {
+      toast.error('Failed to parse HTML');
+      return;
+    }
+
     if (importedLayers.length === 0) {
       toast.error('No valid HTML elements found');
       return;

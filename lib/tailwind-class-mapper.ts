@@ -1445,6 +1445,14 @@ export function classesToDesign(classes: string | string[]): Layer['design'] {
       }
     }
 
+    // Overflow
+    if (cls.startsWith('overflow-')) {
+      const match = cls.match(/^overflow-(visible|hidden|clip|scroll|auto|x-visible|x-hidden|x-clip|x-scroll|x-auto|y-visible|y-hidden|y-clip|y-scroll|y-auto)$/);
+      if (match) {
+        design.sizing!.overflow = match[1];
+      }
+    }
+
     // ===== BORDERS =====
     // Border Radius (all)
     if (cls.startsWith('rounded-[')) {
