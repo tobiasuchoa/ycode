@@ -68,6 +68,7 @@ export interface SizingDesign {
   minHeight?: string;
   maxWidth?: string;
   maxHeight?: string;
+  overflow?: string;
   aspectRatio?: string | null;
   objectFit?: string | null;
   gridColumnSpan?: string | null;
@@ -407,6 +408,8 @@ export interface Layer {
   _layerDataMap?: Record<string, Record<string, string>>;
   // SSR-only property for master component ID (for translation lookups)
   _masterComponentId?: string;
+  // SSR-only property for original layer ID before instance-specific ID transform (for translation lookups)
+  _originalLayerId?: string;
   // SSR-only property for pagination metadata (when pagination is enabled)
   _paginationMeta?: CollectionPaginationMeta;
   // SSR-only property for dynamic inline styles from CMS color field bindings

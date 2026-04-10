@@ -7,6 +7,7 @@
 import nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 import { getSettingByKey } from '@/lib/repositories/settingsRepository';
+import { escapeHtml } from '@/lib/escape-html';
 
 export interface EmailSettings {
   enabled: boolean;
@@ -124,20 +125,6 @@ export function generateEmailText(data: FormSubmissionEmailData): string {
   return Object.entries(data.payload)
     .map(([key, value]) => `${key}: ${String(value ?? '')}`)
     .join('\n');
-}
-
-/**
- * Escape HTML special characters to prevent XSS
- */
-function escapeHtml(text: string): string {
-  const htmlEntities: Record<string, string> = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;',
-  };
-  return text.replace(/[&<>"']/g, (char) => htmlEntities[char]);
 }
 
 /**

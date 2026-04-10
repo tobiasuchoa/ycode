@@ -6,7 +6,7 @@
 import { getSupabaseAdmin } from '@/lib/supabase-server';
 import { createAsset } from '@/lib/repositories/assetRepository';
 import { isAssetOfType } from './asset-utils';
-import { ASSET_CATEGORIES, STORAGE_BUCKET, STORAGE_FOLDERS } from '@/lib/asset-constants';
+import { ASSET_CATEGORIES, STORAGE_BUCKET, generateStoragePath, getDisplayName } from '@/lib/asset-constants';
 import sharp from 'sharp';
 import type { Asset } from '@/types';
 
@@ -175,8 +175,7 @@ export async function uploadFile(
   assetFolderId?: string | null
 ): Promise<Asset | null> {
   try {
-    const baseName = file.name.replace(/\.[^/.]+$/, '');
-    const filename = customName || baseName || file.name;
+    const filename = getDisplayName(file.name, customName);
 
     // Handle SVG files - store content directly without uploading to storage
     if (file.type === 'image/svg+xml') {
@@ -223,9 +222,6 @@ export async function uploadFile(
       throw new Error('Supabase client not available');
     }
 
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).substring(2, 15);
-
     // Try to convert image to WebP
     const webpConversion = await convertImageToWebP(file);
 
@@ -255,7 +251,10 @@ export async function uploadFile(
       dimensions = await getImageDimensions(file);
     }
 
-    const storagePath = `${STORAGE_FOLDERS.WEBSITE}/${timestamp}-${random}.${fileExtension}`;
+    const effectiveFilename = webpConversion
+      ? `${file.name.replace(/\.[^/.]+$/, '')}.${fileExtension}`
+      : file.name;
+    const storagePath = generateStoragePath(effectiveFilename);
 
     const { data, error } = await supabase.storage
       .from(STORAGE_BUCKET)

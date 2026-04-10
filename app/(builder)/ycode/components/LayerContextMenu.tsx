@@ -31,6 +31,9 @@ import type { UseLiveComponentUpdatesReturn } from '@/hooks/use-live-component-u
 import type { Layer } from '@/types';
 import CreateComponentDialog from './CreateComponentDialog';
 import SaveLayoutDialog from './SaveLayoutDialog';
+import ImportHtmlDialog from './ImportHtmlDialog';
+import ExportHtmlDialog from './ExportHtmlDialog';
+import { htmlToLayers, layerToExportHtml } from '@/lib/html-layer-converter';
 
 interface LayerContextMenuProps {
   layerId: string;
@@ -82,6 +85,9 @@ export default function LayerContextMenu({
 }: LayerContextMenuProps) {
   const [isComponentDialogOpen, setIsComponentDialogOpen] = useState(false);
   const [isLayoutDialogOpen, setIsLayoutDialogOpen] = useState(false);
+  const [isImportHtmlOpen, setIsImportHtmlOpen] = useState(false);
+  const [isExportHtmlOpen, setIsExportHtmlOpen] = useState(false);
+  const [exportHtml, setExportHtml] = useState('');
   const [layerName, setLayerName] = useState('');
   const canvasPortalContainer = useCanvasPortalContainer();
   const canvasZoom = useCanvasZoom();
@@ -567,6 +573,54 @@ export default function LayerContextMenu({
     }
   };
 
+  const handleImportHtml = (html: string) => {
+    let importedLayers: Layer[];
+    try {
+      importedLayers = htmlToLayers(html);
+    } catch {
+      toast.error('Failed to parse HTML');
+      return;
+    }
+
+    if (importedLayers.length === 0) {
+      toast.error('No valid HTML elements found');
+      return;
+    }
+
+    if (isComponentContext && editingComponentId) {
+      const componentLayers = getComponentLayers();
+      const targetLayer = findLayerById(componentLayers, layerId);
+      if (!targetLayer) return;
+
+      const newChildren = [...(targetLayer.children || []), ...importedLayers];
+      updateComponentAndBroadcast(
+        updateLayerProps(componentLayers, layerId, { children: newChildren })
+      );
+    } else {
+      const draft = draftsByPageId[pageId];
+      if (!draft) return;
+
+      const targetLayer = findLayerById(draft.layers, layerId);
+      if (!targetLayer) return;
+
+      const newChildren = [...(targetLayer.children || []), ...importedLayers];
+      updateLayer(pageId, layerId, { children: newChildren });
+
+      if (liveLayerUpdates) {
+        liveLayerUpdates.broadcastLayerUpdate(layerId, { children: newChildren });
+      }
+    }
+
+    toast.success('HTML imported successfully');
+  };
+
+  const handleExportHtml = () => {
+    if (!layer) return;
+    const html = layerToExportHtml(layer);
+    setExportHtml(html);
+    setIsExportHtmlOpen(true);
+  };
+
   const handleConvertToCollection = () => {
     if (!layer || !canConvertToCollection(layer)) return;
 
@@ -755,6 +809,18 @@ export default function LayerContextMenu({
           </>
         )}
 
+        <ContextMenuSeparator />
+
+        <ContextMenuItem onClick={() => setIsImportHtmlOpen(true)} disabled={!canPasteInside}>
+          Import HTML
+          <ContextMenuShortcut><Icon name="code" className="size-3" /></ContextMenuShortcut>
+        </ContextMenuItem>
+
+        <ContextMenuItem onClick={handleExportHtml}>
+          Export as HTML
+          <ContextMenuShortcut><Icon name="code" className="size-3" /></ContextMenuShortcut>
+        </ContextMenuItem>
+
         {(showConvertOption || isCollection) && (
           <>
             <ContextMenuSeparator />
@@ -826,6 +892,18 @@ export default function LayerContextMenu({
         onOpenChange={setIsLayoutDialogOpen}
         onConfirm={handleConfirmSaveLayout}
         defaultName={layerName}
+      />
+
+      <ImportHtmlDialog
+        open={isImportHtmlOpen}
+        onOpenChange={setIsImportHtmlOpen}
+        onImport={handleImportHtml}
+      />
+
+      <ExportHtmlDialog
+        open={isExportHtmlOpen}
+        onOpenChange={setIsExportHtmlOpen}
+        html={exportHtml}
       />
     </ContextMenu>
   );

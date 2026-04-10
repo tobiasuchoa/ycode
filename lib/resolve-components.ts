@@ -214,6 +214,7 @@ export function transformLayerIdsForInstance(layers: Layer[], instanceLayerId: s
     const transformedLayer: Layer = {
       ...layer,
       id: newId,
+      _originalLayerId: layer._originalLayerId || layer.id,
     };
 
     // Remap interaction IDs and tween layer_id references

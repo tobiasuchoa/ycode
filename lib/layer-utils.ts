@@ -1540,8 +1540,54 @@ export function getLayerName(
 /**
  * Get the HTML tag name for a layer
  */
+const LAYER_NAME_TO_HTML_TAG: Record<string, string> = {
+  // Content
+  text: 'p',
+  heading: 'h2',
+  richText: 'div',
+  span: 'span',
+  label: 'label',
+
+  // Media
+  image: 'img',
+  icon: 'span',
+  video: 'video',
+  audio: 'audio',
+
+  // Structure (valid HTML tags — pass through via fallback)
+  // div, section, form, button, hr, iframe, input, textarea, select
+
+  // Embedded / special
+  htmlEmbed: 'div',
+  map: 'div',
+
+  // Slider family
+  slider: 'div',
+  slides: 'div',
+  slide: 'div',
+  slideNavigationWrapper: 'div',
+  slideButtonPrev: 'div',
+  slideButtonNext: 'div',
+  slidePaginationWrapper: 'div',
+  slideBullets: 'div',
+  slideBullet: 'div',
+  slideFraction: 'div',
+
+  // Lightbox
+  lightbox: 'div',
+
+  // Locale selector
+  localeSelector: 'div',
+
+  // Filter
+  filter: 'div',
+
+  // Checkbox / radio (the input itself is valid HTML; these are Ycode wrapper names)
+  checkbox: 'input',
+  radio: 'input',
+};
+
 export function getLayerHtmlTag(layer: Layer): string {
-  // Body layer should render as div (actual <body> is managed by Next.js)
   if (layer.id === 'body' || layer.name === 'body') {
     return 'div';
   }
@@ -1550,27 +1596,7 @@ export function getLayerHtmlTag(layer: Layer): string {
     return layer.settings.tag;
   }
 
-  // Heading layers default to h2 when no tag is set
-  if (layer.name === 'heading') {
-    return 'h2';
-  }
-
-  // Rich text renders as div (contains block-level content)
-  if (layer.name === 'richText') {
-    return 'div';
-  }
-
-  // Slider sub-layers always render as divs
-  if (isSliderLayerName(layer.name)) {
-    return 'div';
-  }
-
-  // Map layers render as a wrapper div (iframe inside)
-  if (layer.name === 'map') {
-    return 'div';
-  }
-
-  return layer.name || 'div';
+  return LAYER_NAME_TO_HTML_TAG[layer.name] || layer.name || 'div';
 }
 
 /**

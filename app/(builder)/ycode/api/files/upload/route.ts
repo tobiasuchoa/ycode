@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { uploadFile } from '@/lib/file-upload';
-import { isAssetOfType, ASSET_CATEGORIES } from '@/lib/asset-utils';
+import { validateCategoryMimeType } from '@/lib/asset-utils';
+import { MAX_UPLOAD_FILE_SIZE } from '@/lib/asset-constants';
 
-// Force Node.js runtime for sharp compatibility
 export const runtime = 'nodejs';
 
 /**
  * POST /ycode/api/files/upload
- * Upload a file to Supabase Storage and create Asset record
+ * Upload a file to Supabase Storage and create Asset record.
+ * Used for small files that fit within serverless body limits.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -19,49 +20,19 @@ export async function POST(request: NextRequest) {
     const assetFolderId = formData.get('asset_folder_id') as string | null;
 
     if (!file) {
-      return NextResponse.json(
-        { error: 'No file provided' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
     if (!source) {
-      return NextResponse.json(
-        { error: 'Source is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Source is required' }, { status: 400 });
     }
 
-    if (category === ASSET_CATEGORIES.IMAGES && !isAssetOfType(file.type, ASSET_CATEGORIES.IMAGES)) {
-      return NextResponse.json(
-        { error: 'Only image files are allowed' },
-        { status: 400 }
-      );
+    const mimeError = validateCategoryMimeType(file.type, category);
+    if (mimeError) {
+      return NextResponse.json({ error: mimeError }, { status: 400 });
     }
 
-    if (category === ASSET_CATEGORIES.VIDEOS && !isAssetOfType(file.type, ASSET_CATEGORIES.VIDEOS)) {
-      return NextResponse.json(
-        { error: 'Only video files are allowed' },
-        { status: 400 }
-      );
-    }
-
-    if (category === ASSET_CATEGORIES.AUDIO && !isAssetOfType(file.type, ASSET_CATEGORIES.AUDIO)) {
-      return NextResponse.json(
-        { error: 'Only audio files are allowed' },
-        { status: 400 }
-      );
-    }
-
-    if (category === ASSET_CATEGORIES.DOCUMENTS && !isAssetOfType(file.type, ASSET_CATEGORIES.DOCUMENTS)) {
-      return NextResponse.json(
-        { error: 'Only document files are allowed (PDF, Word, Excel, PowerPoint, Text)' },
-        { status: 400 }
-      );
-    }
-
-    const MAX_FILE_SIZE = 50 * 1024 * 1024;
-    if (file.size > MAX_FILE_SIZE) {
+    if (file.size > MAX_UPLOAD_FILE_SIZE) {
       return NextResponse.json(
         { error: 'File size must be less than 50MB' },
         { status: 400 }
@@ -76,18 +47,12 @@ export async function POST(request: NextRequest) {
     );
 
     if (!asset) {
-      return NextResponse.json(
-        { error: 'Failed to upload file' },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: 'Failed to upload file' }, { status: 500 });
     }
 
     return NextResponse.json({ data: asset }, { status: 200 });
   } catch (error) {
     console.error('Error uploading file:', error);
-    return NextResponse.json(
-      { error: 'Failed to upload file' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to upload file' }, { status: 500 });
   }
 }

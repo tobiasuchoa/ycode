@@ -1,7 +1,9 @@
 'use client';
 
-import { useCallback, memo } from 'react';
-import { Label } from '@/components/ui/label';
+import { useCallback, memo, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import Icon from '@/components/ui/icon';
 import { useDesignSync } from '@/hooks/use-design-sync';
 import { useControlledInputs } from '@/hooks/use-controlled-input';
 import { useEditorStore } from '@/stores/useEditorStore';
@@ -9,6 +11,7 @@ import { extractMeasurementValue } from '@/lib/measurement-utils';
 import { removeSpaces } from '@/lib/utils';
 import type { Layer } from '@/types';
 import MarginPadding from './MarginPadding';
+import SettingsPanel from './SettingsPanel';
 
 interface SpacingControlsProps {
   layer: Layer | null;
@@ -17,6 +20,7 @@ interface SpacingControlsProps {
 }
 
 const SpacingControls = memo(function SpacingControls({ layer, onLayerUpdate, activeTextStyleKey }: SpacingControlsProps) {
+  const [isOpen, setIsOpen] = useState(true);
   const { activeBreakpoint, activeUIState } = useEditorStore();
   const { debouncedUpdateDesignProperty, getDesignProperty } = useDesignSync({
     layer,
@@ -79,12 +83,33 @@ const SpacingControls = memo(function SpacingControls({ layer, onLayerUpdate, ac
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedUpdateDesignProperty]);
 
-  return (
-    <div className="py-5">
-      <header className="py-4 -mt-4">
-        <Label>Spacing</Label>
-      </header>
+  const handleMarginAuto = useCallback(() => {
+    handleChange('marginLeft', 'auto');
+    handleChange('marginRight', 'auto');
+  }, [handleChange]);
 
+  return (
+    <SettingsPanel
+      title="Spacing"
+      isOpen={isOpen}
+      onToggle={() => setIsOpen(!isOpen)}
+      action={
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              onClick={handleMarginAuto}
+              variant="ghost"
+              size="xs"
+            >
+              <Icon name="center-block" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            Center element horizontally.
+          </TooltipContent>
+        </Tooltip>
+      }
+    >
       <MarginPadding
         values={{
           marginTop: marginTopInput,
@@ -98,7 +123,7 @@ const SpacingControls = memo(function SpacingControls({ layer, onLayerUpdate, ac
         }}
         onChange={handleChange}
       />
-    </div>
+    </SettingsPanel>
   );
 });
 export default SpacingControls;

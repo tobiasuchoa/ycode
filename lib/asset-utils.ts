@@ -41,6 +41,34 @@ export function isAssetOfType(
   return ALLOWED_MIME_TYPES[category].includes(mimeType);
 }
 
+/**
+ * Validate a MIME type against a category.
+ * Returns an error message if invalid, or null if valid.
+ */
+export function validateCategoryMimeType(
+  mimeType: string,
+  category: string | null | undefined
+): string | null {
+  if (!category) return null;
+
+  const categoryMap: Record<string, { category: AssetCategory; label: string }> = {
+    [ASSET_CATEGORIES.IMAGES]: { category: ASSET_CATEGORIES.IMAGES, label: 'image' },
+    [ASSET_CATEGORIES.VIDEOS]: { category: ASSET_CATEGORIES.VIDEOS, label: 'video' },
+    [ASSET_CATEGORIES.AUDIO]: { category: ASSET_CATEGORIES.AUDIO, label: 'audio' },
+    [ASSET_CATEGORIES.DOCUMENTS]: { category: ASSET_CATEGORIES.DOCUMENTS, label: 'document' },
+    [ASSET_CATEGORIES.ICONS]: { category: ASSET_CATEGORIES.ICONS, label: 'icon' },
+  };
+
+  const entry = categoryMap[category];
+  if (!entry) return null;
+
+  if (!isAssetOfType(mimeType, entry.category)) {
+    return `Only ${entry.label} files are allowed`;
+  }
+
+  return null;
+}
+
 // Category to label mapping
 const CATEGORY_LABELS: Record<AssetCategory, string> = {
   icons: 'Icon',

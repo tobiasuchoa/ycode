@@ -805,12 +805,82 @@ export const cacheApi = {
 
 // File Upload API
 
+// Files above this threshold use presigned URLs to bypass serverless body limits
+const DIRECT_UPLOAD_THRESHOLD = 4.5 * 1024 * 1024; // 4.5MB
+
 /**
- * Upload a file and create Asset record
+ * Upload a file via presigned URL (direct browser-to-storage).
+ * Used for large files that exceed serverless function body limits.
+ */
+async function uploadViaPresignedUrl(
+  file: File,
+  source: string,
+  category?: AssetCategory | null,
+  customName?: string,
+  assetFolderId?: string | null
+): Promise<Asset | null> {
+  // 1. Get presigned upload URL from server
+  const presignResponse = await fetch('/ycode/api/files/presign', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      filename: file.name,
+      mimeType: file.type,
+      fileSize: file.size,
+      category,
+    }),
+  });
+
+  if (!presignResponse.ok) {
+    const errorData = await presignResponse.json();
+    throw new Error(errorData.error || 'Failed to get upload URL');
+  }
+
+  const { data: presignData } = await presignResponse.json();
+
+  // 2. Upload directly to Supabase Storage using the signed URL
+  const uploadResponse = await fetch(presignData.signedUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': file.type },
+    body: file,
+  });
+
+  if (!uploadResponse.ok) {
+    throw new Error('Failed to upload file to storage');
+  }
+
+  // 3. Register the asset record in the database
+  const registerResponse = await fetch('/ycode/api/files/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      storagePath: presignData.storagePath,
+      filename: file.name,
+      mimeType: file.type,
+      fileSize: file.size,
+      source,
+      customName,
+      assetFolderId,
+    }),
+  });
+
+  if (!registerResponse.ok) {
+    const errorData = await registerResponse.json();
+    throw new Error(errorData.error || 'Failed to register asset');
+  }
+
+  const { data } = await registerResponse.json();
+  return data;
+}
+
+/**
+ * Upload a file and create Asset record.
+ * Small files (<4.5MB) go through the server for WebP conversion.
+ * Large files use presigned URLs to upload directly to storage.
  *
  * @param file - File to upload
  * @param source - Source identifier (e.g., 'page-settings', 'components', 'library')
- * @param category - Optional file category for validation ('images', 'videos', 'audio', 'documents', or null for any)
+ * @param category - Optional file category for validation
  * @param customName - Optional custom name for the file
  */
 export async function uploadFileApi(
@@ -821,6 +891,11 @@ export async function uploadFileApi(
   assetFolderId?: string | null
 ): Promise<Asset | null> {
   try {
+    // Large files bypass the serverless function entirely
+    if (file.size > DIRECT_UPLOAD_THRESHOLD) {
+      return await uploadViaPresignedUrl(file, source, category, customName, assetFolderId);
+    }
+
     const formData = new FormData();
     formData.append('file', file);
     formData.append('source', source);

@@ -358,6 +358,7 @@ export default function MarginPadding({ values, onChange }: MarginPaddingProps) 
   const isDragActive = !!draggingEdge;
 
   return (
+    <div className="flex flex-col items-center gap-3">
     <div className="grid grid-cols-[44px_44px_1fr_44px_44px] grid-rows-[auto_auto_auto_auto_auto] max-w-[214px] mx-auto">
       {/* Margin box (outer, dashed) */}
       <div className="relative col-span-5 row-span-5 col-start-1 row-start-1">
@@ -457,6 +458,8 @@ export default function MarginPadding({ values, onChange }: MarginPaddingProps) 
       <div className="col-start-3 row-start-3 h-full p-0.5">
         <div className="bg-input rounded-[8px] w-full h-full min-h-4 min-w-4" />
       </div>
+    </div>
+
     </div>
   );
 }
