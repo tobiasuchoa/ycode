@@ -68,6 +68,7 @@ export interface SizingDesign {
   minHeight?: string;
   maxWidth?: string;
   maxHeight?: string;
+  overflow?: string;
   aspectRatio?: string | null;
   objectFit?: string | null;
   gridColumnSpan?: string | null;

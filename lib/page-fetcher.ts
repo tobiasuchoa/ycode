@@ -1,4 +1,5 @@
 import { cache } from 'react';
+import { escapeHtml } from '@/lib/escape-html';
 import { getSupabaseAdmin } from '@/lib/supabase-server';
 import { buildSlugPath, buildDynamicPageUrl, buildLocalizedSlugPath, buildLocalizedDynamicPageUrl, detectLocaleFromPath, matchPageWithTranslatedSlugs, matchDynamicPageWithTranslatedSlugs } from '@/lib/page-utils';
 import { getItemWithValues, getItemsWithValues, getItemIdsByFieldValue } from '@/lib/repositories/collectionItemRepository';
@@ -4166,16 +4167,4 @@ function layerToHtml(
   }
 
   return elementHtml;
-}
-
-/**
- * Escape HTML special characters to prevent XSS
- */
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
 }
