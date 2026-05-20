@@ -681,14 +681,32 @@ const LayerItem: React.FC<{
     ? getTextStyleClasses(layer.textStyles, 'paragraph')
     : '';
 
-  // <a> with display:flex is block-level (full width) unlike <button> which
-  // shrink-wraps. Add w-fit to match button sizing unless width is explicit.
+  // `<button>` defaults to `display: inline-block` (shrink-wraps) and
+  // `text-align: center`, while `<a>` defaults to `display: inline` and inherits
+  // text-align (typically left). When a button-with-link is rendered as `<a>`,
+  // re-apply those button defaults so layout matches:
+  // - `w-fit`: only if no explicit width or block-level display class is set,
+  //   since those make the element block-level (full width) on purpose.
+  // - `text-center`: only if no explicit text-align class is set.
+  const BLOCK_DISPLAY_CLASSES = new Set([
+    'flex', 'block', 'grid', 'table', 'flow-root',
+  ]);
+  const TEXT_ALIGN_CLASSES = new Set([
+    'text-left', 'text-center', 'text-right', 'text-justify', 'text-start', 'text-end',
+  ]);
+  const layerClassList = isButtonWithLink
+    ? (Array.isArray(layer.classes) ? layer.classes : (layer.classes || '').split(' '))
+    : [];
   const buttonNeedsFit = isButtonWithLink && (() => {
-    const cls = Array.isArray(layer.classes) ? layer.classes : (layer.classes || '').split(' ');
-    return !cls.some((c: string) => /^w-/.test(c.split(':').pop() || ''));
+    const hasWidth = layerClassList.some((c: string) => /^w-/.test(c.split(':').pop() || ''));
+    if (hasWidth) return false;
+    const hasBlockDisplay = layerClassList.some((c: string) => BLOCK_DISPLAY_CLASSES.has(c.split(':').pop() || ''));
+    return !hasBlockDisplay;
   })();
+  const buttonNeedsTextCenter = isButtonWithLink
+    && !layerClassList.some((c: string) => TEXT_ALIGN_CLASSES.has(c.split(':').pop() || ''));
 
-  const fullClassName = clsx(classesString, paragraphClasses, SWIPER_CLASS_MAP[layer.name], isSlideChild && 'swiper-slide', buttonNeedsFit && 'w-fit');
+  const fullClassName = clsx(classesString, paragraphClasses, SWIPER_CLASS_MAP[layer.name], isSlideChild && 'swiper-slide', buttonNeedsFit && 'w-fit', buttonNeedsTextCenter && 'text-center');
 
   if (layer.settings?.hidden) {
     return null;
