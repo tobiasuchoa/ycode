@@ -10,7 +10,7 @@ import { enrichItemsWithCountValues } from '@/lib/repositories/collectionCountRe
 import type { Page, PageFolder, PageLayers, Component, ComponentVariable, CollectionItemWithValues, CollectionField, Layer, CollectionPaginationMeta, Translation, Locale } from '@/types';
 import { getCollectionVariable, resolveFieldValue, evaluateVisibility, getLayerHtmlTag, filterDisabledSliderLayers } from '@/lib/layer-utils';
 import { isFieldVariable, isAssetVariable, createDynamicTextVariable, createDynamicRichTextVariable, createAssetVariable, getDynamicTextContent, getVariableStringValue, getAssetId, resolveDesignStyles } from '@/lib/variable-utils';
-import { generateImageSrcset, getImageSizes, getOptimizedImageUrl, getAssetProxyUrl, DEFAULT_ASSETS, collectLayerAssetIds, buildSvgDataUrl } from '@/lib/asset-utils';
+import { buildImageSizes, generateImageSrcset, getOptimizedImageUrl, getAssetProxyUrl, DEFAULT_ASSETS, collectLayerAssetIds, buildSvgDataUrl, parseImageDimension } from '@/lib/asset-utils';
 import { resolveComponents, applyComponentOverrides } from '@/lib/resolve-components';
 import { getComponentVariantLayers } from '@/lib/component-variant-utils';
 import { isTiptapDoc, hasBlockElementsWithResolver } from '@/lib/tiptap-utils';
@@ -4186,15 +4186,17 @@ function layerToHtml(
       }
     }
 
+    const intrinsicWidth = parseImageDimension(imgWidth);
+    const intrinsicHeight = parseImageDimension(imgHeight);
+
     if (resolvedSrcValue && resolvedSrcValue.trim()) {
       const optimizedSrc = getOptimizedImageUrl(resolvedSrcValue, 1920, 85);
       attrs.push(`src="${escapeHtml(optimizedSrc)}"`);
 
-      const intrinsicWidthForSrcset = imgWidth ? parseInt(imgWidth, 10) : null;
-      const srcset = generateImageSrcset(resolvedSrcValue, undefined, undefined, intrinsicWidthForSrcset);
+      const srcset = generateImageSrcset(resolvedSrcValue, undefined, undefined, intrinsicWidth);
       if (srcset) {
         attrs.push(`srcset="${escapeHtml(srcset)}"`);
-        attrs.push(`sizes="${escapeHtml(getImageSizes())}"`);
+        attrs.push(`sizes="${escapeHtml(buildImageSizes(intrinsicWidth))}"`);
       }
     }
     attrs.push('data-layer-type="image"');
@@ -4205,8 +4207,8 @@ function layerToHtml(
       attrs.push(`alt="${escapeHtml(resolvedAlt)}"`);
     }
 
-    if (imgWidth) attrs.push(`width="${escapeHtml(imgWidth)}"`);
-    if (imgHeight) attrs.push(`height="${escapeHtml(imgHeight)}"`);
+    if (intrinsicWidth) attrs.push(`width="${intrinsicWidth}"`);
+    if (intrinsicHeight) attrs.push(`height="${intrinsicHeight}"`);
 
     const imgLoadingAttr = layer.attributes?.loading;
     if (imgLoadingAttr) attrs.push(`loading="${escapeHtml(String(imgLoadingAttr))}"`);

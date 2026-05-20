@@ -280,12 +280,16 @@ export default function ImageSettings(props: ImageSettingsProps) {
   }, [isStandaloneMode, updateStandaloneValue, layer, onLayerUpdate]);
 
   const handleWidthChange = useCallback((value: string) => {
+    // Drop empty/zero values — `width="0"` short-circuits the asset-dimension
+    // fallback at render time and produces broken sizes/srcset math.
+    const trimmed = value.trim();
+    const sanitized = trimmed && parseInt(trimmed, 10) > 0 ? trimmed : undefined;
     if (isStandaloneMode) {
-      updateStandaloneValue({ width: value || undefined });
+      updateStandaloneValue({ width: sanitized });
     } else if (layer && onLayerUpdate) {
       const newAttributes = { ...layer.attributes };
-      if (value) {
-        newAttributes.width = value;
+      if (sanitized) {
+        newAttributes.width = sanitized;
       } else {
         delete newAttributes.width;
       }
@@ -294,12 +298,14 @@ export default function ImageSettings(props: ImageSettingsProps) {
   }, [isStandaloneMode, updateStandaloneValue, layer, onLayerUpdate]);
 
   const handleHeightChange = useCallback((value: string) => {
+    const trimmed = value.trim();
+    const sanitized = trimmed && parseInt(trimmed, 10) > 0 ? trimmed : undefined;
     if (isStandaloneMode) {
-      updateStandaloneValue({ height: value || undefined });
+      updateStandaloneValue({ height: sanitized });
     } else if (layer && onLayerUpdate) {
       const newAttributes = { ...layer.attributes };
-      if (value) {
-        newAttributes.height = value;
+      if (sanitized) {
+        newAttributes.height = sanitized;
       } else {
         delete newAttributes.height;
       }

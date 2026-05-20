@@ -12,7 +12,7 @@ import { resolveCustomCodePlaceholders } from '@/lib/resolve-cms-variables';
 import { renderRootLayoutHeadCode } from '@/lib/parse-head-html';
 import { generateInitialAnimationCSS, type HiddenLayerInfo } from '@/lib/animation-utils';
 import { buildCustomFontsCss, buildFontClassesCss, fetchGoogleFontsCss, getGoogleFontLinks } from '@/lib/font-utils';
-import { collectLayerAssetIds, findLcpCandidate, generateImageSrcset, getAssetProxyUrl, getImageSizes, getOptimizedImageUrl } from '@/lib/asset-utils';
+import { buildImageSizes, collectLayerAssetIds, findLcpCandidate, generateImageSrcset, getAssetProxyUrl, getOptimizedImageUrl } from '@/lib/asset-utils';
 import { getAllPages } from '@/lib/repositories/pageRepository';
 import { getAllPageFolders } from '@/lib/repositories/pageFolderRepository';
 import { getMapboxAccessToken, getGoogleMapsEmbedApiKey } from '@/lib/map-server';
@@ -503,9 +503,7 @@ export default async function PageRenderer({
     if (candidateAsset?.url) {
       lcpPreloadSrc = getOptimizedImageUrl(candidateAsset.url, 1920, 85);
       lcpPreloadSrcset = generateImageSrcset(candidateAsset.url, undefined, undefined, candidateAsset.width) || null;
-      lcpPreloadSizes = candidateAsset.width
-        ? `(max-width: 768px) 100vw, ${candidateAsset.width}px`
-        : getImageSizes();
+      lcpPreloadSizes = buildImageSizes(candidateAsset.width || null);
     }
   }
 

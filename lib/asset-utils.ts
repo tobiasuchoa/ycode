@@ -480,6 +480,27 @@ export function getImageSizes(): string {
   return '100vw';
 }
 
+/**
+ * Parse an image dimension attribute into a positive pixel value.
+ * Accepts `"320"` or `"320px"`. Returns null for empty, zero, or non-numeric input,
+ * preventing meaningless `width="0"` attributes from skewing srcset/sizes math.
+ */
+export function parseImageDimension(value: string | number | undefined | null): number | null {
+  if (value == null) return null;
+  const str = String(value).trim();
+  if (!/^\d+(\.\d+)?(px)?$/i.test(str)) return null;
+  const num = parseFloat(str.replace(/px$/i, ''));
+  return num > 0 ? num : null;
+}
+
+/**
+ * Build a responsive `sizes` attribute. With a known intrinsic width, browsers
+ * pick a smaller srcset variant on desktop; without it, fall back to 100vw.
+ */
+export function buildImageSizes(intrinsicWidth: number | null): string {
+  return intrinsicWidth ? `(max-width: 768px) 100vw, ${intrinsicWidth}px` : getImageSizes();
+}
+
 // Semantic layer names whose descendant images are almost never the LCP
 // (logos, menus, footer marks). Tracked via ancestor walk in
 // `findLcpCandidateLayerId` so we don't accidentally prioritize a header
