@@ -1,4 +1,25 @@
 import { z } from 'zod';
+import { ELEMENT_TEMPLATES } from '@/lib/mcp/utils';
+
+/**
+ * Enum of every element template key the MCP can create. Derived from
+ * ELEMENT_TEMPLATES so the three add-layer surfaces (single, batch,
+ * component) cannot drift apart when a new template is added.
+ */
+export const templateEnum = z.enum(
+  Object.keys(ELEMENT_TEMPLATES) as [string, ...string[]],
+);
+
+/**
+ * Structured rich-text block accepted by add_layer (rich_content) and the
+ * batch set_rich_text operation. Mirrors the RichTextBlock type in utils.ts.
+ */
+export const richTextBlockSchema = z.object({
+  type: z.enum(['paragraph', 'heading', 'blockquote', 'bulletList', 'orderedList', 'codeBlock', 'horizontalRule']),
+  text: z.string().optional().describe('Text content. Supports **bold**, *italic*, [link](url).'),
+  level: z.number().optional().describe('Heading level 1-6 (for heading type)'),
+  items: z.array(z.string()).optional().describe('List items (for bulletList/orderedList)'),
+});
 
 export const designSchema = z.object({
   layout: z.object({

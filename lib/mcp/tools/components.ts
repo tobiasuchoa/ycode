@@ -19,7 +19,6 @@ import {
   getTiptapTextContent,
   applyDesignToLayer,
   generateId,
-  ELEMENT_TEMPLATES,
 } from '@/lib/mcp/utils';
 import {
   broadcastComponentCreated,
@@ -27,11 +26,7 @@ import {
   broadcastComponentDeleted,
   broadcastComponentLayersUpdated,
 } from '@/lib/mcp/broadcast';
-import { designSchema } from './shared-schemas';
-
-const templateEnum = z.enum(
-  Object.keys(ELEMENT_TEMPLATES) as [string, ...string[]],
-);
+import { designSchema, templateEnum } from './shared-schemas';
 
 const variableSchema = z.object({
   name: z.string().describe('Display name (e.g. "Button label", "Hero image")'),
