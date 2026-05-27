@@ -53,6 +53,15 @@ export function isHomepage(page: Page): boolean {
 }
 
 /**
+ * Strip leading/trailing slashes from a single slug segment so it doesn't
+ * collapse into an empty path or introduce double slashes when joined.
+ * Preserves interior slashes (legacy nested slugs like `foo/bar`).
+ */
+export function normalizeSlugSegment(slug: string | null | undefined): string {
+  return (slug ?? '').replace(/^\/+|\/+$/g, '');
+}
+
+/**
  * Build the full slug path for a page or folder
  * Returns the full URL path starting with "/"
  *
@@ -93,7 +102,9 @@ export function buildSlugPath(
     }
   }
 
-  return '/' + slugParts.filter(Boolean).join('/');
+  // Legacy data sometimes stores an index page slug as the literal `/`. Without
+  // normalisation that produces paths like `/blog//` when concatenated.
+  return '/' + slugParts.map(normalizeSlugSegment).filter(Boolean).join('/');
 }
 
 /**
@@ -224,7 +235,7 @@ export function buildLocalizedSlugPath(
   }
 
   // Add locale code prefix
-  const pathWithoutLocale = '/' + slugParts.filter(Boolean).join('/');
+  const pathWithoutLocale = '/' + slugParts.map(normalizeSlugSegment).filter(Boolean).join('/');
   return `/${locale.code}${pathWithoutLocale}`;
 }
 
@@ -343,7 +354,7 @@ export function matchPageWithTranslatedSlugs(
     slugParts.push(translatedSlug);
   }
 
-  const constructedPath = '/' + slugParts.filter(Boolean).join('/');
+  const constructedPath = '/' + slugParts.map(normalizeSlugSegment).filter(Boolean).join('/');
   return constructedPath === targetPath;
 }
 
@@ -381,7 +392,7 @@ export function matchDynamicPageWithTranslatedSlugs(
   // Add {slug} placeholder for dynamic page
   slugParts.push('{slug}');
 
-  const patternPath = '/' + slugParts.filter(Boolean).join('/');
+  const patternPath = '/' + slugParts.map(normalizeSlugSegment).filter(Boolean).join('/');
 
   // Replace {slug} with regex capture group
   const patternRegex = patternPath.replace(/\{slug\}/g, '([^/]+)');

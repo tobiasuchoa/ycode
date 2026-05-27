@@ -1,7 +1,7 @@
 import { revalidateTag, revalidatePath } from 'next/cache';
 import { invalidateByTag } from '@vercel/functions';
 import { getSupabaseAdmin } from '@/lib/supabase-server';
-import { buildSlugPath } from '@/lib/page-utils';
+import { buildSlugPath, normalizeSlugSegment } from '@/lib/page-utils';
 import type { Page, PageFolder } from '@/types';
 import type {
   ChangedLocale,
@@ -195,7 +195,7 @@ export async function getRoutePathsForPages(pageIds: string[]): Promise<string[]
           slugParts.push(localeTranslations[pageKey] || page.slug);
         }
 
-        const localePath = slugParts.filter(Boolean).join('/');
+        const localePath = slugParts.map(normalizeSlugSegment).filter(Boolean).join('/');
         if (localePath) routePaths.push(localePath);
       }
     }
@@ -291,7 +291,7 @@ async function resolveDynamicPageRoutes(
         slugParts.push(...folderSegments);
         slugParts.push(itemSlug);
 
-        const localePath = slugParts.filter(Boolean).join('/');
+        const localePath = slugParts.map(normalizeSlugSegment).filter(Boolean).join('/');
         if (localePath) routes.push(localePath);
       }
     }
@@ -357,7 +357,7 @@ export async function getRoutePathsForDeletedCollectionItems(
           }
           slugParts.push(...folderSegments);
           slugParts.push(itemSlug);
-          const localePath = slugParts.filter(Boolean).join('/');
+          const localePath = slugParts.map(normalizeSlugSegment).filter(Boolean).join('/');
           if (localePath) routes.push(localePath);
         }
       }
