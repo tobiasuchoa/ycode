@@ -1517,8 +1517,9 @@ function resolveRichTextVariables(
     const isBlockNode = (n: any) =>
       n?.type === 'paragraph' || n?.type === 'heading' ||
       n?.type === 'bulletList' || n?.type === 'orderedList' ||
-      n?.type === 'richTextComponent' || n?.type === 'richTextImage' ||
-      n?.type === 'table' || n?.type === 'richTextHtmlEmbed' || n?.type === 'horizontalRule';
+      n?.type === 'blockquote' || n?.type === 'richTextComponent' ||
+      n?.type === 'richTextImage' || n?.type === 'table' ||
+      n?.type === 'richTextHtmlEmbed' || n?.type === 'horizontalRule';
     const hasBlockChildren = result.content.some(isBlockNode);
     if (hasBlockChildren) {
       const lifted: any[] = [];
