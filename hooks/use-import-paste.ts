@@ -20,6 +20,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { cloneDeep } from 'lodash';
 import type { Layer } from '@/types';
 import { useFontsStore } from '@/stores/useFontsStore';
 import { YCODE_FIGMA_SIGNATURE, isYcodeFigmaPayload } from '@/lib/figma/types';
@@ -32,6 +33,19 @@ import { plural } from '@/lib/import/summary';
 import type { ImportSummary } from '@/lib/import/types';
 import { readExternalDesignClipboard } from '@/lib/import/clipboard-detect';
 import { YCODE_LAYER_CLIPBOARD_SIGNATURE } from '@/stores/useClipboardStore';
+import {
+  isYcodeClipboard,
+  parseYcodeClipboard,
+  getProjectIdentity,
+  getTabIdentity,
+  type YcodeClipboardBundle,
+} from '@/lib/import/ycode/bundle';
+import {
+  materializeYcodeBundle,
+  hydrateLocalDependencies,
+  refreshSharedReferenceStores,
+} from '@/lib/import/ycode/materialize';
+import { regenerateIdsWithInteractionRemapping } from '@/lib/layer-utils';
 import {
   useExternalPasteStore,
   type ExternalPastePlacement,
@@ -327,6 +341,102 @@ export function useImportPaste({
     }
   }, [insertLayers]);
 
+  const importYcode = useCallback(async (bundle: YcodeClipboardBundle, placement?: ExternalPastePlacement) => {
+    const sameProject = !!bundle.sourceProjectId && bundle.sourceProjectId === getProjectIdentity();
+    const sameTab = sameProject && !!bundle.sourceTabId && bundle.sourceTabId === getTabIdentity();
+
+    // Same project AND same tab: the in-memory clipboard already holds these
+    // exact layers, so a keyboard paste takes the original internal paste path
+    // unchanged — identical placement, selection and ids as before this feature
+    // existed. (Context-menu "paste after/inside" carries an explicit placement
+    // and falls through to the positional insert below.)
+    if (sameTab && !placement) {
+      onNormalPaste();
+      return;
+    }
+
+    isProcessingRef.current = true;
+    try {
+      let layers: Layer[];
+
+      if (sameProject) {
+        // All ids are valid in this project — no materialization needed. But an
+        // entity created in another tab may not be loaded in this one yet.
+        // Styles/components/assets travel in the bundle, so inject any missing
+        // ones; fonts, color variables, collections and pages don't, so refresh
+        // those stores when the copy came from a different tab.
+        if (!sameTab) {
+          await refreshSharedReferenceStores();
+        }
+        hydrateLocalDependencies(bundle);
+        layers = bundle.layers.map((layer) => cloneDeep(layer));
+      } else {
+        const toastId = toast.loading('Pasting…');
+        try {
+          const result = await materializeYcodeBundle(bundle);
+          layers = result.layers;
+
+          if (layers.length === 0) {
+            toast.error('Nothing to paste', { id: toastId });
+            return;
+          }
+
+          const parts = [
+            result.summary.styles > 0 ? plural(result.summary.styles, 'style') : '',
+            result.summary.components > 0 ? plural(result.summary.components, 'component') : '',
+            result.summary.assets > 0 ? plural(result.summary.assets, 'image') : '',
+            result.summary.fonts > 0 ? plural(result.summary.fonts, 'font') : '',
+            result.summary.colorVariables > 0 ? plural(result.summary.colorVariables, 'color variable') : '',
+          ].filter(Boolean);
+          toast.success(parts.length > 0 ? `Pasted with ${parts.join(', ')}` : 'Pasted', { id: toastId });
+
+          // CMS data lives in the source project's database and can't travel.
+          if (result.cmsStripped > 0) {
+            toast.message('Some CMS content wasn’t pasted', {
+              description: 'Collection and field bindings only exist in the original project. Reconnect them here.',
+              duration: 8_000,
+            });
+          }
+
+          // Page links point at pages that only exist in the source project.
+          if (result.pageLinksStripped > 0) {
+            toast.message(`${plural(result.pageLinksStripped, 'page link')} cleared`, {
+              description: 'Linked pages exist only in the original project. Re-point them to pages here.',
+              duration: 8_000,
+            });
+          }
+
+          // Custom (non-Google) fonts can't travel; text falls back to default.
+          if (result.unavailableFonts.length > 0) {
+            const names = result.unavailableFonts.join(', ');
+            toast.warning(
+              `Using default font for ${plural(result.unavailableFonts.length, 'unavailable font')}`,
+              {
+                description: `Not on Google Fonts: ${names}. Upload them under Fonts to match the design.`,
+                duration: 8_000,
+              },
+            );
+          }
+        } catch (error) {
+          console.error('[useImportPaste] Ycode cross-project paste failed:', error);
+          toast.error('Failed to paste', {
+            id: toastId,
+            description: error instanceof Error ? error.message : 'Unknown error',
+          });
+          return;
+        }
+      }
+
+      // Fresh ids so the paste never collides with existing layers (mirrors the
+      // internal copy/paste path). The host's page insertion regenerates again,
+      // which is harmless; the component-editor path relies on these ids.
+      const fresh = layers.map((layer) => regenerateIdsWithInteractionRemapping(cloneDeep(layer)));
+      insertLayers(fresh, placement);
+    } finally {
+      isProcessingRef.current = false;
+    }
+  }, [insertLayers, onNormalPaste]);
+
   // Imperative entry point for the layer context menu's "Paste after / inside".
   // Re-reads the OS clipboard (the menu only knew a payload *existed*) and
   // imports it at the chosen placement.
@@ -337,7 +447,13 @@ export function useImportPaste({
     }
     const data = await readExternalDesignClipboard();
     if (!data) {
-      toast.error('No Figma or Webflow content found on the clipboard');
+      toast.error('No pasteable content found on the clipboard');
+      return;
+    }
+    if (data.kind === 'ycode') {
+      const bundle = parseYcodeClipboard(data.text);
+      if (bundle) void importYcode(bundle, placement);
+      else toast.error('Clipboard content was incomplete', { description: 'Try copying the layers again.' });
       return;
     }
     if (data.kind === 'webflow') {
@@ -357,7 +473,7 @@ export function useImportPaste({
         description: 'Try copying the frames again from Figma.',
       });
     }
-  }, [importWebflow, importFigma]);
+  }, [importWebflow, importFigma, importYcode]);
 
   // Expose the runner so the context menu (a different subtree) can trigger a
   // positional external paste.
@@ -382,10 +498,30 @@ export function useImportPaste({
       return;
     }
 
-    // 0. Internal Ycode copy/cut — the layer lives in the clipboard store, and
-    // the OS clipboard only carries our marker (which overwrote any stale
-    // Webflow/Figma payload). Route straight to the normal internal paste.
     const text = readClipboardText(e.clipboardData);
+
+    // 0. Internal Ycode bundle — a self-contained copy (layers + their styles,
+    // components, assets, fonts) that works across tabs/browsers/projects. Parse
+    // it here; if it's there but unparseable (truncated), fall back to the
+    // in-memory clipboard so same-tab paste still works.
+    if (isYcodeClipboard(text)) {
+      e.preventDefault();
+      e.stopPropagation();
+      const bundle = parseYcodeClipboard(text);
+      if (bundle) {
+        if (isProcessingRef.current) {
+          toast.message('Still pasting the previous selection…');
+          return;
+        }
+        void importYcode(bundle);
+      } else if (!isProcessingRef.current) {
+        onNormalPaste();
+      }
+      return;
+    }
+
+    // 0b. Legacy / fallback marker — the layer lives only in the in-memory
+    // clipboard store (bundle write was denied or too large).
     if (text.trim() === YCODE_LAYER_CLIPBOARD_SIGNATURE) {
       e.preventDefault();
       e.stopPropagation();
@@ -429,7 +565,7 @@ export function useImportPaste({
     // 3. Normal Ycode internal paste.
     e.preventDefault();
     if (!isProcessingRef.current) onNormalPaste();
-  }, [enabled, importWebflow, importFigma, onNormalPaste]);
+  }, [enabled, importWebflow, importFigma, importYcode, onNormalPaste]);
 
   useEffect(() => {
     if (!enabled) return;

@@ -157,8 +157,11 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
   const pages = usePagesStore((state) => state.pages);
 
   const clipboardLayer = useClipboardStore((state) => state.clipboardLayer);
+  const clipboardLayers = useClipboardStore((state) => state.clipboardLayers);
   const copyToClipboard = useClipboardStore((state) => state.copyLayer);
   const cutToClipboard = useClipboardStore((state) => state.cutLayer);
+  const copyLayersToClipboard = useClipboardStore((state) => state.copyLayers);
+  const cutLayersToClipboard = useClipboardStore((state) => state.cutLayers);
   const copyStyleToClipboard = useClipboardStore((state) => state.copyStyle);
   const pasteStyleFromClipboard = useClipboardStore((state) => state.pasteStyle);
 
@@ -280,6 +283,11 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
     // selection-based heuristic below.
     if (placement) {
       if (editingComponentId) {
+        const circularError = checkCircularReference(editingComponentId, layers, components);
+        if (circularError) {
+          toast.error('Infinite component loop detected', { description: circularError });
+          return;
+        }
         const currentLayers = getCurrentLayers();
         const target = findLayerById(currentLayers, placement.layerId);
         if (!target) return;
@@ -343,6 +351,11 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
     // Component editor: the store paste actions are page-scoped, so operate
     // directly on the component's layer tree using the same rules.
     if (editingComponentId) {
+      const circularError = checkCircularReference(editingComponentId, layers, components);
+      if (circularError) {
+        toast.error('Infinite component loop detected', { description: circularError });
+        return;
+      }
       const currentLayers = getCurrentLayers();
       const selected = selectedId ? findLayerById(currentLayers, selectedId) : null;
 
@@ -414,43 +427,58 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
     }
 
     setSelectedLayerId(layers[0].id);
-  }, [canEditStructure, editingComponentId, currentPageId, getCurrentLayers, updateCurrentLayers, setSelectedLayerId, pasteInside, pasteAfter]);
+  }, [canEditStructure, editingComponentId, components, currentPageId, getCurrentLayers, updateCurrentLayers, setSelectedLayerId, pasteInside, pasteAfter]);
 
   // Normal Ycode paste (internal clipboard) — extracted from keydown so it
   // can run inside the paste event handler after Figma detection fails.
   const handleNormalPaste = useCallback(() => {
     if (!canEditStructure) return;
     const selectedLayerId = selectedLayerIdRef.current;
-    if (!clipboardLayer || !selectedLayerId) return;
+    // In-memory fallback for when the OS clipboard bundle couldn't be written
+    // (denied/too large). Supports the full multi-select selection.
+    const layersToPaste = clipboardLayers.length > 0
+      ? clipboardLayers
+      : clipboardLayer
+        ? [clipboardLayer]
+        : [];
+    if (layersToPaste.length === 0 || !selectedLayerId) return;
 
     if (editingComponentId) {
-      const circularError = checkCircularReference(editingComponentId, clipboardLayer, components);
-      if (circularError) {
-        toast.error('Infinite component loop detected', { description: circularError });
-        return;
-      }
-      const layers = getCurrentLayers();
-      const result = findParentAndIndex(layers, selectedLayerId);
-      if (result) {
-        if (result.parent && !canPasteIntoParent(layers, result.parent.id, clipboardLayer)) {
+      let working = getCurrentLayers();
+      let anchorId = selectedLayerId;
+      for (const source of layersToPaste) {
+        const circularError = checkCircularReference(editingComponentId, source, components);
+        if (circularError) {
+          toast.error('Infinite component loop detected', { description: circularError });
+          return;
+        }
+        const result = findParentAndIndex(working, anchorId);
+        if (!result) break;
+        if (result.parent && !canPasteIntoParent(working, result.parent.id, source)) {
           toast.error(LINK_NESTING_ERROR.title, { description: LINK_NESTING_ERROR.description });
           return;
         }
-        const newLayer = regenerateIdsWithInteractionRemapping(cloneDeep(clipboardLayer));
-        updateCurrentLayers(insertLayerAfter(layers, result.parent, result.index, newLayer));
+        const newLayer = regenerateIdsWithInteractionRemapping(cloneDeep(source));
+        working = insertLayerAfter(working, result.parent, result.index, newLayer);
+        anchorId = newLayer.id;
       }
+      updateCurrentLayers(working);
     } else if (currentPageId) {
-      let pastedLayer: Layer | null;
-      if (selectedLayerId === 'body') {
-        pastedLayer = pasteInside(currentPageId, selectedLayerId, clipboardLayer);
-      } else {
-        pastedLayer = pasteAfter(currentPageId, selectedLayerId, clipboardLayer);
-      }
-      if (!pastedLayer && clipboardLayer) {
-        toast.error(LINK_NESTING_ERROR.title, { description: LINK_NESTING_ERROR.description });
+      let anchorId = selectedLayerId;
+      for (const source of layersToPaste) {
+        const pastedLayer = anchorId === 'body'
+          ? pasteInside(currentPageId, anchorId, source)
+          : pasteAfter(currentPageId, anchorId, source);
+        if (!pastedLayer) {
+          toast.error(LINK_NESTING_ERROR.title, { description: LINK_NESTING_ERROR.description });
+          return;
+        }
+        // Chain subsequent layers after the one just pasted (unless pasting
+        // into body, where order is preserved by appending).
+        if (anchorId !== 'body') anchorId = pastedLayer.id;
       }
     }
-  }, [canEditStructure, clipboardLayer, editingComponentId, components, getCurrentLayers, updateCurrentLayers, currentPageId, pasteInside, pasteAfter]);
+  }, [canEditStructure, clipboardLayer, clipboardLayers, editingComponentId, components, getCurrentLayers, updateCurrentLayers, currentPageId, pasteInside, pasteAfter]);
 
   useImportPaste({
     enabled: !!(currentPageId || editingComponentId),
@@ -1683,12 +1711,12 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
                 if (editingComponentId) {
                   const copiedLayers = layersToCheck.map(l => cloneDeep(l));
                   if (copiedLayers.length > 0) {
-                    copyToClipboard(copiedLayers[0], currentPageId || '');
+                    copyLayersToClipboard(copiedLayers, currentPageId || '');
                   }
                 } else if (currentPageId) {
                   const copiedLayers = copyLayersFromStore(currentPageId, selectedLayerIds);
                   if (copiedLayers.length > 0) {
-                    copyToClipboard(copiedLayers[0], currentPageId);
+                    copyLayersToClipboard(copiedLayers, currentPageId);
                   }
                 }
               }
@@ -1728,7 +1756,7 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
                 if (editingComponentId) {
                   const copiedLayers = layersToCheck.map(l => cloneDeep(l));
                   if (copiedLayers.length > 0) {
-                    cutToClipboard(copiedLayers[0], currentPageId || '');
+                    cutLayersToClipboard(copiedLayers, currentPageId || '');
                     // Remove layers from component draft
                     let newLayers = layers;
                     for (const layerId of selectedLayerIds) {
@@ -1740,7 +1768,7 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
                 } else if (currentPageId) {
                   const copiedLayers = copyLayersFromStore(currentPageId, selectedLayerIds);
                   if (copiedLayers.length > 0) {
-                    cutToClipboard(copiedLayers[0], currentPageId);
+                    cutLayersToClipboard(copiedLayers, currentPageId);
                     deleteLayers(currentPageId, selectedLayerIds);
                     clearSelection();
 
@@ -2032,6 +2060,8 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
     copyLayerFromStore,
     copyToClipboard,
     cutToClipboard,
+    copyLayersToClipboard,
+    cutLayersToClipboard,
     clipboardLayer,
     pasteAfter,
     pasteInside,

@@ -811,7 +811,7 @@ function LayerContextMenuInner({
             container={canvasPortalContainer}
             style={canvasPortalContainer ? { zoom: 100 / canvasZoom } : undefined}
           >
-            {hasExternal && (
+            {hasExternal && (externalKind === 'figma' || externalKind === 'webflow') && (
               <>
                 <ContextMenuLabel className="flex items-center gap-1.5 font-normal text-muted-foreground select-none">
                   <Icon name={externalKind === 'figma' ? 'figma' : 'webflow'} className="size-3" />

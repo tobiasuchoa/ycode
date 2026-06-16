@@ -17,7 +17,7 @@
 
 import { create } from 'zustand';
 
-export type ExternalPasteKind = 'webflow' | 'figma';
+export type ExternalPasteKind = 'webflow' | 'figma' | 'ycode';
 
 /** Where an external paste should land, relative to a target layer. */
 export interface ExternalPastePlacement {

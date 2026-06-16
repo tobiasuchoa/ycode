@@ -13,8 +13,9 @@
 import { isWebflowClipboard } from '@/lib/import/adapters/webflow';
 import { YCODE_FIGMA_SIGNATURE } from '@/lib/figma/types';
 import { YCODE_LAYER_CLIPBOARD_SIGNATURE } from '@/stores/useClipboardStore';
+import { isYcodeClipboard } from '@/lib/import/ycode/bundle';
 
-export type ExternalClipboardKind = 'webflow' | 'figma';
+export type ExternalClipboardKind = 'webflow' | 'figma' | 'ycode';
 
 /**
  * True only when clipboard-read is *already* granted. Used to gate the
@@ -86,8 +87,14 @@ async function readClipboardParts(): Promise<{ text: string; html: string }> {
 export async function readExternalDesignClipboard(): Promise<ExternalClipboardData | null> {
   const { text, html } = await readClipboardParts();
 
-  // An internal Ycode copy claims the OS clipboard with this marker — not external.
+  // The legacy bare marker means the data lives only in the in-memory clipboard.
   if (text.trim() === YCODE_LAYER_CLIPBOARD_SIGNATURE) return null;
+
+  // Internal Ycode bundle — a full cross-tab/cross-project copy.
+  const ycodeText = [text, html].find((value) => value && isYcodeClipboard(value));
+  if (ycodeText) {
+    return { kind: 'ycode', text: ycodeText, html };
+  }
 
   // Webflow's XSCP JSON usually lands in text/plain, but accept text/html too.
   const webflowText = [text, html].find((value) => value && isWebflowClipboard(value));

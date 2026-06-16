@@ -9,29 +9,24 @@
 
 import { create } from 'zustand';
 import type { Layer, LayerInteraction } from '../types';
+import { writeYcodeClipboard } from '@/lib/import/ycode/bundle';
 
 /**
- * Marker written to the OS clipboard on an internal copy/cut. The paste handler
- * (`use-import-paste`) reads the OS clipboard to decide between a design-tool
- * import (Webflow/Figma) and a normal internal paste. Because an internal copy
- * stores the layer in this store — not on the OS clipboard — a stale Webflow
- * payload left in the OS clipboard would otherwise be re-imported on every
- * paste. Claiming the OS clipboard with this marker overwrites that stale
- * payload so the paste falls through to the internal clipboard.
+ * Legacy marker for an internal copy/cut. Kept for backward compatibility: a
+ * copy now writes a full serialized bundle to the OS clipboard (so paste works
+ * across tabs/browsers), but when the bundle can't be written (too large, or
+ * clipboard write denied) we fall back to this marker plus the in-memory layer,
+ * which keeps same-tab paste working and clears any stale Webflow/Figma payload.
  */
 export const YCODE_LAYER_CLIPBOARD_SIGNATURE = '__ycode-internal-clipboard__';
 
-/** Best-effort: overwrite the OS clipboard so stale Webflow/Figma data clears. */
-function claimSystemClipboard(): void {
-  try {
-    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-      void navigator.clipboard.writeText(YCODE_LAYER_CLIPBOARD_SIGNATURE).catch(() => {
-        /* permission/focus denied — internal paste still works in-tab */
-      });
-    }
-  } catch {
-    /* clipboard API unavailable — ignore */
-  }
+/**
+ * Best-effort: serialize the copied layers + their dependencies onto the OS
+ * clipboard so another tab/browser/project can paste them. The in-memory state
+ * below remains the fallback when the write is denied or the bundle is too big.
+ */
+function claimSystemClipboard(layers: Layer[]): void {
+  void writeYcodeClipboard(layers);
 }
 
 interface CopiedStyle {
@@ -49,6 +44,8 @@ interface CopiedInteractions {
 
 interface ClipboardState {
   clipboardLayer: Layer | null;
+  /** Full in-memory selection (fallback for multi-select when the OS clipboard write is denied). */
+  clipboardLayers: Layer[];
   clipboardMode: 'copy' | 'cut' | null;
   sourcePageId: string | null;
   copiedStyle: CopiedStyle | null;
@@ -58,6 +55,8 @@ interface ClipboardState {
 interface ClipboardActions {
   copyLayer: (layer: Layer, pageId: string) => void;
   cutLayer: (layer: Layer, pageId: string) => void;
+  copyLayers: (layers: Layer[], pageId: string) => void;
+  cutLayers: (layers: Layer[], pageId: string) => void;
   clearClipboard: () => void;
   copyStyle: (classes: string, design?: Layer['design'], styleId?: string, styleOverrides?: Layer['styleOverrides'], styleIds?: string[]) => void;
   pasteStyle: () => CopiedStyle | null;
@@ -71,24 +70,30 @@ type ClipboardStore = ClipboardState & ClipboardActions;
 
 export const useClipboardStore = create<ClipboardStore>((set, get) => ({
   clipboardLayer: null,
+  clipboardLayers: [],
   clipboardMode: null,
   sourcePageId: null,
   copiedStyle: null,
   copiedInteractions: null,
 
-  copyLayer: (layer, pageId) => {
-    claimSystemClipboard();
+  copyLayer: (layer, pageId) => get().copyLayers([layer], pageId),
+  cutLayer: (layer, pageId) => get().cutLayers([layer], pageId),
+
+  copyLayers: (layers, pageId) => {
+    claimSystemClipboard(layers);
     set({
-      clipboardLayer: layer,
+      clipboardLayer: layers[0] ?? null,
+      clipboardLayers: layers,
       clipboardMode: 'copy',
       sourcePageId: pageId,
     });
   },
 
-  cutLayer: (layer, pageId) => {
-    claimSystemClipboard();
+  cutLayers: (layers, pageId) => {
+    claimSystemClipboard(layers);
     set({
-      clipboardLayer: layer,
+      clipboardLayer: layers[0] ?? null,
+      clipboardLayers: layers,
       clipboardMode: 'cut',
       sourcePageId: pageId,
     });
@@ -97,6 +102,7 @@ export const useClipboardStore = create<ClipboardStore>((set, get) => ({
   clearClipboard: () => {
     set({
       clipboardLayer: null,
+      clipboardLayers: [],
       clipboardMode: null,
       sourcePageId: null,
     });
