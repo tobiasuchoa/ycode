@@ -14,7 +14,7 @@
 import { withTransaction } from '../database/transaction';
 import { getSupabaseAdmin, getTenantIdFromHeaders } from '@/lib/supabase-server';
 import { getKnexClient } from '@/lib/knex-client';
-import { SUPABASE_WRITE_BATCH_SIZE } from '@/lib/supabase-constants';
+import { SUPABASE_IN_FILTER_CHUNK_SIZE, SUPABASE_WRITE_BATCH_SIZE } from '@/lib/supabase-constants';
 import { getCollectionById, hardDeleteCollection } from '@/lib/repositories/collectionRepository';
 import { getFieldsByCollectionId } from '@/lib/repositories/collectionFieldRepository';
 import { getItemsByCollectionId, getAllItemsByCollectionId, getItemsByIds } from '@/lib/repositories/collectionItemRepository';
@@ -538,11 +538,14 @@ async function publishSelectedItems(
       // Non-fatal: proceed with unpublish even if the slug snapshot fails
     }
 
-    await client
-      .from('collection_items')
-      .delete()
-      .in('id', nonPublishableIds)
-      .eq('is_published', true);
+    for (let i = 0; i < nonPublishableIds.length; i += SUPABASE_IN_FILTER_CHUNK_SIZE) {
+      const idsChunk = nonPublishableIds.slice(i, i + SUPABASE_IN_FILTER_CHUNK_SIZE);
+      await client
+        .from('collection_items')
+        .delete()
+        .in('id', idsChunk)
+        .eq('is_published', true);
+    }
   }
 
   if (publishableItems.length === 0) {
@@ -1182,24 +1185,30 @@ export async function groupItemsByCollection(
     return new Map();
   }
 
-  const { data: items, error } = await client
-    .from('collection_items')
-    .select('id, collection_id')
-    .eq('is_published', false)
-    .in('id', itemIds);
+  // Chunk the id list so large `.in()` filters don't overflow the request URL
+  // length limit (which returns 400 Bad Request).
+  const items: Array<{ id: string; collection_id: string }> = [];
+  for (let i = 0; i < itemIds.length; i += SUPABASE_IN_FILTER_CHUNK_SIZE) {
+    const idsChunk = itemIds.slice(i, i + SUPABASE_IN_FILTER_CHUNK_SIZE);
+    const { data, error } = await client
+      .from('collection_items')
+      .select('id, collection_id')
+      .eq('is_published', false)
+      .in('id', idsChunk);
 
-  if (error) {
-    throw new Error(`Failed to fetch collection items: ${error.message}`);
-  }
+    if (error) {
+      throw new Error(`Failed to fetch collection items: ${error.message}`);
+    }
 
-  if (!items) {
-    return new Map();
+    if (data) {
+      items.push(...data);
+    }
   }
 
   // Group items by collection
   const itemsByCollection = new Map<string, string[]>();
 
-  items.forEach((item: any) => {
+  items.forEach((item) => {
     const existing = itemsByCollection.get(item.collection_id) || [];
     existing.push(item.id);
     itemsByCollection.set(item.collection_id, existing);

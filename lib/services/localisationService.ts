@@ -8,7 +8,7 @@
  */
 
 import { getSupabaseAdmin } from '@/lib/supabase-server';
-import { SUPABASE_WRITE_BATCH_SIZE } from '@/lib/supabase-constants';
+import { SUPABASE_IN_FILTER_CHUNK_SIZE, SUPABASE_WRITE_BATCH_SIZE } from '@/lib/supabase-constants';
 import { getAllTranslationRows } from '@/lib/repositories/translationRepository';
 import type { Locale, Translation, TranslationSourceType } from '@/types';
 
@@ -344,18 +344,24 @@ export async function publishLocalisation(): Promise<PublishLocalisationResult> 
     const activeDraftTranslations = allDraftTranslations.filter((t: Translation) => t.deleted_at === null);
     const softDeletedDraftTranslations = allDraftTranslations.filter((t: Translation) => t.deleted_at !== null);
 
-    // Step 5: Soft-delete published versions of soft-deleted draft translations (single query)
+    // Step 5: Soft-delete published versions of soft-deleted draft translations.
+    // Chunk the id list so large `.in()` filters don't overflow the request URL
+    // length limit (which returns 400 Bad Request).
     if (softDeletedDraftTranslations.length > 0) {
       const translationIds = softDeletedDraftTranslations.map((translation: Translation) => translation.id);
-      const { error: deleteTranslationsError } = await client
-        .from('translations')
-        .update({ deleted_at: deletedAt })
-        .in('id', translationIds)
-        .eq('is_published', true)
-        .is('deleted_at', null);
 
-      if (deleteTranslationsError) {
-        throw new Error(`Failed to soft-delete translations: ${deleteTranslationsError.message}`);
+      for (let i = 0; i < translationIds.length; i += SUPABASE_IN_FILTER_CHUNK_SIZE) {
+        const idsChunk = translationIds.slice(i, i + SUPABASE_IN_FILTER_CHUNK_SIZE);
+        const { error: deleteTranslationsError } = await client
+          .from('translations')
+          .update({ deleted_at: deletedAt })
+          .in('id', idsChunk)
+          .eq('is_published', true)
+          .is('deleted_at', null);
+
+        if (deleteTranslationsError) {
+          throw new Error(`Failed to soft-delete translations: ${deleteTranslationsError.message}`);
+        }
       }
     }
 
