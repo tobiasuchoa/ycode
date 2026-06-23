@@ -1,6 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { useComponentsStore } from '@/stores/useComponentsStore';
 import { useEditorStore } from '@/stores/useEditorStore';
@@ -38,6 +39,8 @@ interface AiChatState {
   error: string | null;
   /** When on, the agent screenshots its work and critiques/fixes it automatically. */
   autoReview: boolean;
+  /** Chosen model id, or null to use the server-resolved default. */
+  model: string | null;
 }
 
 /** A layer the user explicitly attached as context for a message. */
@@ -78,6 +81,7 @@ interface AiChatActions {
   clear: () => void;
   stop: () => void;
   setAutoReview: (value: boolean) => void;
+  setModel: (model: string | null) => void;
   sendMessage: (text: string, attachment?: MessageAttachment) => Promise<void>;
 }
 
@@ -152,52 +156,54 @@ function newId(): string {
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-export const useAiChatStore = create<AiChatStore>((set, get) => {
-  /**
+export const useAiChatStore = create<AiChatStore>()(
+  persist(
+    (set, get) => {
+      /**
    * Stream a single agent turn into a new assistant message. After a turn that
    * makes visual edits, optionally captures the page and recurses for one
    * automatic self-review pass (bounded by MAX_REVIEW_DEPTH).
    */
-  const runTurn = async (
-    text: string,
-    attachment: MessageAttachment | undefined,
-    reviewDepth: number,
-  ): Promise<void> => {
-    const trimmed = text.trim();
-    const images = attachment?.images ?? [];
-    if (!trimmed && images.length === 0) return;
+      const runTurn = async (
+        text: string,
+        attachment: MessageAttachment | undefined,
+        reviewDepth: number,
+      ): Promise<void> => {
+        const trimmed = text.trim();
+        const images = attachment?.images ?? [];
+        if (!trimmed && images.length === 0) return;
 
-    const isReview = reviewDepth > 0;
-    const promptText = trimmed || 'Use the attached image(s) as a reference for what to build.';
+        const isReview = reviewDepth > 0;
+        const promptText = trimmed || 'Use the attached image(s) as a reference for what to build.';
 
-    const userMessage: ChatMessage = {
-      id: newId(),
-      role: 'user',
-      text: promptText,
-      toolCalls: [],
-      images: images.length > 0 ? images.map((img) => ({ id: newId(), dataUrl: img.dataUrl })) : undefined,
-      review: isReview || undefined,
-    };
-    const assistantMessage: ChatMessage = { id: newId(), role: 'assistant', text: '', toolCalls: [] };
+        const userMessage: ChatMessage = {
+          id: newId(),
+          role: 'user',
+          text: promptText,
+          toolCalls: [],
+          images: images.length > 0 ? images.map((img) => ({ id: newId(), dataUrl: img.dataUrl })) : undefined,
+          review: isReview || undefined,
+        };
+        const assistantMessage: ChatMessage = { id: newId(), role: 'assistant', text: '', toolCalls: [] };
 
-    // History: prior turns as text. Assistant turns that only ran tools still
-    // contribute a placeholder so user/assistant roles keep alternating.
-    const history = get()
-      .messages.map((message) => ({
-        role: message.role,
-        content:
+        // History: prior turns as text. Assistant turns that only ran tools still
+        // contribute a placeholder so user/assistant roles keep alternating.
+        const history = get()
+          .messages.map((message) => ({
+            role: message.role,
+            content:
           message.text.trim() ||
           (message.role === 'assistant' && message.toolCalls.length > 0 ? '(made the requested edits)' : ''),
-      }))
-      .filter((message) => message.content.length > 0);
+          }))
+          .filter((message) => message.content.length > 0);
 
-    set((state) => ({ messages: [...state.messages, userMessage, assistantMessage], error: null }));
+        set((state) => ({ messages: [...state.messages, userMessage, assistantMessage], error: null }));
 
-    const editor = useEditorStore.getState();
-    abortController = new AbortController();
-    const signal = abortController.signal;
+        const editor = useEditorStore.getState();
+        abortController = new AbortController();
+        const signal = abortController.signal;
 
-    const userContent =
+        const userContent =
       images.length > 0
         ? [
           { type: 'text' as const, text: promptText },
@@ -205,94 +211,122 @@ export const useAiChatStore = create<AiChatStore>((set, get) => {
         ]
         : promptText;
 
-    const patchAssistant = (updater: (message: ChatMessage) => ChatMessage) => {
-      set((state) => ({
-        messages: state.messages.map((message) =>
-          message.id === assistantMessage.id ? updater(message) : message,
-        ),
-      }));
-    };
+        const patchAssistant = (updater: (message: ChatMessage) => ChatMessage) => {
+          set((state) => ({
+            messages: state.messages.map((message) =>
+              message.id === assistantMessage.id ? updater(message) : message,
+            ),
+          }));
+        };
 
-    try {
-      const response = await fetch('/ycode/api/ai/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: [...history, { role: 'user', content: userContent }],
-          pageId: editor.currentPageId,
-          selectedLayers: attachment?.selectedLayers ?? [],
-          mentions: attachment?.mentions ?? [],
-          referenceUrls: attachment?.referenceUrls ?? [],
-        }),
-        signal,
-      });
+        try {
+          const response = await fetch('/ycode/api/ai/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              messages: [...history, { role: 'user', content: userContent }],
+              pageId: editor.currentPageId,
+              selectedLayers: attachment?.selectedLayers ?? [],
+              mentions: attachment?.mentions ?? [],
+              referenceUrls: attachment?.referenceUrls ?? [],
+              model: get().model ?? undefined,
+            }),
+            signal,
+          });
 
-      if (!response.ok || !response.body) {
-        const message = await safeErrorMessage(response);
-        patchAssistant((m) => ({ ...m, text: m.text || message }));
-        set({ error: message });
-        return;
-      }
+          if (!response.ok || !response.body) {
+            const message = await safeErrorMessage(response);
+            patchAssistant((m) => ({ ...m, text: m.text || message }));
+            set({ error: message });
+            return;
+          }
 
-      await consumeSse(response.body, (event) => applyEvent(event, patchAssistant, set));
-    } catch (error) {
-      if ((error as Error).name === 'AbortError') return;
-      set({ error: error instanceof Error ? error.message : 'Something went wrong' });
-      return;
-    }
-
-    // Visual self-review: if this turn changed the page, screenshot it and let
-    // the agent critique and fix its own work (one pass).
-    if (get().autoReview && reviewDepth < MAX_REVIEW_DEPTH && !signal.aborted) {
-      const completed = get().messages.find((m) => m.id === assistantMessage.id);
-      const changedVisuals = completed?.toolCalls.some((call) => isVisualMutation(call.name)) ?? false;
-      if (changedVisuals) {
-        const shot = await captureCurrentPageImage();
-        if (shot && !signal.aborted) {
-          await runTurn(REVIEW_PROMPT, { images: [shot] }, reviewDepth + 1);
+          await consumeSse(response.body, (event) => applyEvent(event, patchAssistant, set));
+        } catch (error) {
+          if ((error as Error).name === 'AbortError') return;
+          set({ error: error instanceof Error ? error.message : 'Something went wrong' });
+          return;
         }
-      }
-    }
-  };
 
-  return {
-    isOpen: false,
-    messages: [],
-    status: 'idle',
-    error: null,
-    autoReview: true,
+        // Visual self-review: if this turn changed the page, screenshot it and let
+        // the agent critique and fix its own work (one pass).
+        if (get().autoReview && reviewDepth < MAX_REVIEW_DEPTH && !signal.aborted) {
+          const completed = get().messages.find((m) => m.id === assistantMessage.id);
+          const changedVisuals = completed?.toolCalls.some((call) => isVisualMutation(call.name)) ?? false;
+          if (changedVisuals) {
+            const shot = await captureCurrentPageImage();
+            if (shot && !signal.aborted) {
+              await runTurn(REVIEW_PROMPT, { images: [shot] }, reviewDepth + 1);
+            }
+          }
+        }
+      };
 
-    open: () => set({ isOpen: true }),
-    close: () => set({ isOpen: false }),
-    toggle: () => set((state) => ({ isOpen: !state.isOpen })),
+      return {
+        isOpen: false,
+        messages: [],
+        status: 'idle',
+        error: null,
+        autoReview: true,
+        model: null,
 
-    setAutoReview: (value: boolean) => set({ autoReview: value }),
+        open: () => set({ isOpen: true }),
+        close: () => set({ isOpen: false }),
+        toggle: () => set((state) => ({ isOpen: !state.isOpen })),
 
-    clear: () => {
-      get().stop();
-      set({ messages: [], error: null });
+        setAutoReview: (value: boolean) => set({ autoReview: value }),
+        setModel: (model: string | null) => set({ model }),
+
+        clear: () => {
+          get().stop();
+          set({ messages: [], error: null });
+        },
+
+        stop: () => {
+          abortController?.abort();
+          abortController = null;
+          set({ status: 'idle' });
+        },
+
+        sendMessage: async (text: string, attachment?: MessageAttachment) => {
+          const hasContent = text.trim().length > 0 || (attachment?.images?.length ?? 0) > 0;
+          if (!hasContent || get().status !== 'idle') return;
+
+          set({ status: 'streaming', error: null });
+          try {
+            await runTurn(text, attachment, 0);
+          } finally {
+            abortController = null;
+            set({ status: 'idle' });
+          }
+        },
+      };
     },
-
-    stop: () => {
-      abortController?.abort();
-      abortController = null;
-      set({ status: 'idle' });
+    {
+      name: 'ycode-ai-chat',
+      version: 1,
+      storage: createJSONStorage(() =>
+        typeof window !== 'undefined'
+          ? window.localStorage
+          : { getItem: () => null, setItem: () => undefined, removeItem: () => undefined },
+      ),
+      // Persist only the durable, lightweight bits. Image data and per-turn revert
+      // checkpoints are intentionally dropped to stay under localStorage quota.
+      partialize: (state) => ({
+        isOpen: state.isOpen,
+        autoReview: state.autoReview,
+        model: state.model,
+        messages: state.messages.map((message) => ({
+          id: message.id,
+          role: message.role,
+          text: message.text,
+          toolCalls: message.toolCalls,
+          review: message.review,
+        })),
+      }),
     },
-
-    sendMessage: async (text: string, attachment?: MessageAttachment) => {
-      const hasContent = text.trim().length > 0 || (attachment?.images?.length ?? 0) > 0;
-      if (!hasContent || get().status !== 'idle') return;
-
-      set({ status: 'streaming', error: null });
-      try {
-        await runTurn(text, attachment, 0);
-      } finally {
-        abortController = null;
-        set({ status: 'idle' });
-      }
-    },
-  };
-});
+  ),
+);
 
 function applyEvent(
   event: RuntimeEvent,

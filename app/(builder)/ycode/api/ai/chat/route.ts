@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
+import { isAllowedModel } from '@/lib/agent/models';
 import { getAgentProvider, AgentConfigurationError } from '@/lib/agent/providers';
 import { runAgent } from '@/lib/agent/runtime';
 import type { AgentContentBlock, AgentMessage } from '@/lib/agent/providers/types';
@@ -18,6 +19,25 @@ import type { AgentContentBlock, AgentMessage } from '@/lib/agent/providers/type
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
+
+/**
+ * Lightweight in-process rate limiter. The editor is single-tenant per instance,
+ * so a global sliding window is enough to bound runaway cost from rapid-fire
+ * requests. (Cloud applies its own per-tenant limits in the overlay.)
+ */
+const RATE_LIMIT_MAX = 30;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const requestTimestamps: number[] = [];
+
+function isRateLimited(): boolean {
+  const now = Date.now();
+  while (requestTimestamps.length > 0 && now - requestTimestamps[0] > RATE_LIMIT_WINDOW_MS) {
+    requestTimestamps.shift();
+  }
+  if (requestTimestamps.length >= RATE_LIMIT_MAX) return true;
+  requestTimestamps.push(now);
+  return false;
+}
 
 const contentBlockSchema = z.union([
   z.object({ type: z.literal('text'), text: z.string() }),
@@ -40,9 +60,17 @@ const bodySchema = z.object({
     .array(z.object({ type: z.enum(['page', 'collection', 'layer']), id: z.string(), label: z.string() }))
     .optional(),
   referenceUrls: z.array(z.string()).optional(),
+  model: z.string().optional(),
 });
 
 export async function POST(request: Request): Promise<Response> {
+  if (isRateLimited()) {
+    return NextResponse.json(
+      { error: 'Too many requests. Please wait a moment and try again.' },
+      { status: 429 },
+    );
+  }
+
   let parsed: z.infer<typeof bodySchema>;
   try {
     parsed = bodySchema.parse(await request.json());
@@ -63,6 +91,12 @@ export async function POST(request: Request): Promise<Response> {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
     return NextResponse.json({ error: 'Failed to initialize AI provider' }, { status: 500 });
+  }
+
+  // Honor a client-chosen model only if it's in the allowlist; otherwise keep
+  // the server-resolved default.
+  if (parsed.model && isAllowedModel(parsed.model)) {
+    model = parsed.model;
   }
 
   const messages: AgentMessage[] = parsed.messages.map((message) => ({

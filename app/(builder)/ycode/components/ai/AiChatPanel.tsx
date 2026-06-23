@@ -3,9 +3,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Icon } from '@/components/ui/icon';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
+import { AGENT_MODELS } from '@/lib/agent/models';
 import { getLayerName } from '@/lib/layer-display-utils';
 import { findLayerById } from '@/lib/layer-utils';
 import { cn } from '@/lib/utils';
@@ -93,8 +101,10 @@ export default function AiChatPanel({ embedded = false }: AiChatPanelProps) {
   const status = useAiChatStore((s) => s.status);
   const error = useAiChatStore((s) => s.error);
   const autoReview = useAiChatStore((s) => s.autoReview);
+  const model = useAiChatStore((s) => s.model);
   const sendMessage = useAiChatStore((s) => s.sendMessage);
   const setAutoReview = useAiChatStore((s) => s.setAutoReview);
+  const setModel = useAiChatStore((s) => s.setModel);
   const stop = useAiChatStore((s) => s.stop);
   const clear = useAiChatStore((s) => s.clear);
   const close = useAiChatStore((s) => s.close);
@@ -270,35 +280,39 @@ export default function AiChatPanel({ embedded = false }: AiChatPanelProps) {
       )}
     >
       {embedded ? (
-        <div className="flex items-center justify-end gap-1 px-4 pt-3 shrink-0">
-          <Button
-            size="sm"
-            variant="ghost"
-            className={cn('size-7 p-0', autoReview ? 'text-foreground' : 'text-muted-foreground')}
-            onClick={() => setAutoReview(!autoReview)}
-            aria-pressed={autoReview}
-            aria-label="Auto visual review"
-            title={autoReview ? 'Auto visual review: on' : 'Auto visual review: off'}
-          >
-            <Icon name="eye" className="size-3.5" />
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="size-7 p-0"
-            onClick={clear}
-            disabled={messages.length === 0}
-            aria-label="New chat"
-            title="New chat"
-          >
-            <Icon name="plus" className="size-3.5" />
-          </Button>
+        <div className="flex items-center justify-between gap-1 px-4 pt-3 shrink-0">
+          <ModelPicker model={model} onChange={setModel} />
+          <div className="flex items-center gap-1">
+            <Button
+              size="sm"
+              variant="ghost"
+              className={cn('size-7 p-0', autoReview ? 'text-foreground' : 'text-muted-foreground')}
+              onClick={() => setAutoReview(!autoReview)}
+              aria-pressed={autoReview}
+              aria-label="Auto visual review"
+              title={autoReview ? 'Auto visual review: on' : 'Auto visual review: off'}
+            >
+              <Icon name="eye" className="size-3.5" />
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="size-7 p-0"
+              onClick={clear}
+              disabled={messages.length === 0}
+              aria-label="New chat"
+              title="New chat"
+            >
+              <Icon name="plus" className="size-3.5" />
+            </Button>
+          </div>
         </div>
       ) : (
         <div className="flex items-center justify-between px-4 h-12 shrink-0 border-b">
           <div className="flex items-center gap-2">
             <Icon name="sparkles" className="size-3.5 text-foreground" />
             <span className="text-xs font-medium">AI</span>
+            <ModelPicker model={model} onChange={setModel} />
           </div>
           <div className="flex items-center gap-1">
             <Button
@@ -465,6 +479,43 @@ export default function AiChatPanel({ embedded = false }: AiChatPanelProps) {
         </div>
       </div>
     </div>
+  );
+}
+
+function ModelPicker({
+  model,
+  onChange,
+}: {
+  model: string | null;
+  onChange: (model: string | null) => void;
+}) {
+  const current = AGENT_MODELS.find((option) => option.id === model);
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 gap-1 px-1.5 text-[11px] text-muted-foreground"
+        >
+          {current?.label ?? 'Default model'}
+          <Icon name="chevronDown" className="size-3" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        <DropdownMenuRadioGroup
+          value={model ?? 'default'}
+          onValueChange={(value) => onChange(value === 'default' ? null : value)}
+        >
+          <DropdownMenuRadioItem value="default">Default</DropdownMenuRadioItem>
+          {AGENT_MODELS.map((option) => (
+            <DropdownMenuRadioItem key={option.id} value={option.id}>
+              {option.label}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
