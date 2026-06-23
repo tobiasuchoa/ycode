@@ -37,10 +37,12 @@
     "migrate:rollback": "NODE_NO_WARNINGS=1 knex migrate:rollback --knexfile knexfile.ts",
     "migrate:status": "NODE_NO_WARNINGS=1 knex migrate:status --knexfile knexfile.ts",
     "migrate:credentials": "npx ts-node scripts/migrate-credentials.ts",
+    "agent:tools": "TS_NODE_TRANSPILE_ONLY=1 TS_NODE_PROJECT=tsconfig.test.json node --require ts-node/register --require tsconfig-paths/register scripts/list-agent-tools.ts",
     "fonts:update": "npx ts-node scripts/fetch-google-fonts.ts",
     "prepare": "husky"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.105.0",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/modifiers": "^9.0.0",
     "@dnd-kit/sortable": "^10.0.0",
