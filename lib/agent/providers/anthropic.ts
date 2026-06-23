@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 
 import { toAnthropicTools } from '@/lib/agent/tools/to-anthropic';
 
+import type { AgentTool } from '@/lib/agent/tools/types';
 import type {
   AgentContentBlock,
   AgentMessage,
@@ -9,6 +10,23 @@ import type {
   ProviderStreamEvent,
   ProviderStreamOptions,
 } from './types';
+
+/**
+ * Converting ~80 Zod tool schemas to Anthropic JSON Schema is non-trivial CPU
+ * work, and the tool set is static (the registry returns a stable array
+ * reference). Cache the converted-and-cache-marked result per tools reference so
+ * it's computed once per process instead of on every tool-loop turn / prompt.
+ */
+const convertedToolsCache = new WeakMap<readonly AgentTool[], Anthropic.Tool[]>();
+
+function getAnthropicTools(tools: readonly AgentTool[]): Anthropic.Tool[] {
+  const cached = convertedToolsCache.get(tools);
+  if (cached) return cached;
+
+  const converted = withToolCaching(toAnthropicTools(tools as AgentTool[]));
+  convertedToolsCache.set(tools, converted);
+  return converted;
+}
 
 /**
  * BYOK Anthropic provider.
@@ -32,7 +50,7 @@ export function createAnthropicProvider(apiKey: string): AgentProvider {
     id: 'anthropic-byok',
 
     async *streamMessage(options: ProviderStreamOptions): AsyncIterable<ProviderStreamEvent> {
-      const tools = withToolCaching(toAnthropicTools(options.tools));
+      const tools = getAnthropicTools(options.tools);
       const messages = toAnthropicMessages(options.messages);
 
       for (let attempt = 1; ; attempt += 1) {

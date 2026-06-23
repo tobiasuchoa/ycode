@@ -138,7 +138,11 @@ export function getAgentTools(): AgentTool[] {
   return cachedTools;
 }
 
+let cachedToolMap: Map<string, AgentTool> | null = null;
+
 /** Tool descriptors keyed by name, for fast lookup during a tool-calling loop. */
 export function getAgentToolMap(): Map<string, AgentTool> {
-  return new Map(getAgentTools().map((tool) => [tool.name, tool]));
+  if (cachedToolMap) return cachedToolMap;
+  cachedToolMap = new Map(getAgentTools().map((tool) => [tool.name, tool]));
+  return cachedToolMap;
 }
