@@ -16,6 +16,10 @@ export interface AgentEditorContext {
   selectedLayerIds?: string[];
   /** Selected layers with display names — preferred over bare ids when present. */
   selectedLayers?: Array<{ id: string; name?: string }>;
+  /** Pages/collections/layers the user @-mentioned in the message. */
+  mentions?: Array<{ type: 'page' | 'collection' | 'layer'; id: string; label: string }>;
+  /** URLs the user referenced in the message. */
+  referenceUrls?: string[];
 }
 
 export interface RunAgentOptions {
@@ -142,6 +146,29 @@ function buildSystemPrompt(context?: AgentEditorContext): string {
         `A selected layer is often a container/wrapper, not the exact element a change applies to — call get_layers and inspect its subtree, then apply each change to the descendant the property actually belongs to (e.g. text color/typography goes on the text/heading/button layer inside, not the wrapping div). ` +
         `If a change applies to several descendants, update all of them in one batch. Never ask the user to re-select a deeper element.`,
     );
+  }
+
+  if (context?.mentions && context.mentions.length > 0) {
+    const byType = (type: string) =>
+      context
+        .mentions!.filter((mention) => mention.type === type)
+        .map((mention) => `"${mention.label}" (id: ${mention.id})`)
+        .join(', ');
+    const parts: string[] = [];
+    const pages = byType('page');
+    const collections = byType('collection');
+    const layers = byType('layer');
+    if (pages) parts.push(`page(s): ${pages}`);
+    if (collections) parts.push(`collection(s): ${collections}`);
+    if (layers) parts.push(`layer(s): ${layers}`);
+    if (parts.length > 0) {
+      lines.push(`The user referenced ${parts.join('; ')}. Use these ids directly with the relevant tools.`);
+    }
+  }
+
+  if (context?.referenceUrls && context.referenceUrls.length > 0) {
+    const urls = context.referenceUrls.join(', ');
+    lines.push(`The user referenced these URLs: ${urls}. You cannot browse the web, so do not invent their contents — use them as link destinations or literal content. If the user wants you to replicate a design from a URL, ask them to paste a screenshot instead.`);
   }
 
   if (lines.length === 0) return SYSTEM_INSTRUCTIONS;

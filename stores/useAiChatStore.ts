@@ -50,10 +50,19 @@ export interface ImageAttachment {
   dataUrl: string;
 }
 
+/** A page, collection, or layer the user referenced via @-mention. */
+export interface Mention {
+  type: 'page' | 'collection' | 'layer';
+  id: string;
+  label: string;
+}
+
 /** Extra context attached to a single message from the composer. */
 export interface MessageAttachment {
   selectedLayers?: SelectedLayerRef[];
   images?: ImageAttachment[];
+  mentions?: Mention[];
+  referenceUrls?: string[];
 }
 
 interface AiChatActions {
@@ -159,6 +168,8 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
           messages: [...history, { role: 'user', content: userContent }],
           pageId: editor.currentPageId,
           selectedLayers: attachment?.selectedLayers ?? [],
+          mentions: attachment?.mentions ?? [],
+          referenceUrls: attachment?.referenceUrls ?? [],
         }),
         signal: abortController.signal,
       });

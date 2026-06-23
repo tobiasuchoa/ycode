@@ -10,9 +10,11 @@ import { getLayerName } from '@/lib/layer-display-utils';
 import { findLayerById } from '@/lib/layer-utils';
 import { cn } from '@/lib/utils';
 import { useAiChatStore } from '@/stores/useAiChatStore';
-import type { ChatMessage, ImageAttachment, SelectedLayerRef } from '@/stores/useAiChatStore';
+import type { ChatMessage, ImageAttachment, Mention, SelectedLayerRef } from '@/stores/useAiChatStore';
+import { useCollectionsStore } from '@/stores/useCollectionsStore';
 import { useEditorStore } from '@/stores/useEditorStore';
 import { usePagesStore } from '@/stores/usePagesStore';
+import type { Layer } from '@/types';
 
 import { toolCallLabel } from './ai-tool-labels';
 
@@ -24,6 +26,41 @@ const SUGGESTIONS = [
 
 const MAX_IMAGES = 4;
 const ACCEPTED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+const MAX_MENTION_RESULTS = 8;
+const URL_REGEX = /\bhttps?:\/\/[^\s]+/gi;
+
+const MENTION_ICON: Record<Mention['type'], 'page' | 'database' | 'layers'> = {
+  page: 'page',
+  collection: 'database',
+  layer: 'layers',
+};
+
+/** The active "@query" token under the caret, if any. */
+function getActiveMention(text: string, caret: number): { query: string; start: number } | null {
+  const upto = text.slice(0, caret);
+  const at = upto.lastIndexOf('@');
+  if (at === -1) return null;
+  const charBefore = at === 0 ? ' ' : upto[at - 1];
+  if (!/\s/.test(charBefore)) return null;
+  const query = upto.slice(at + 1);
+  if (/\s/.test(query)) return null;
+  return { query, start: at };
+}
+
+function parseUrls(text: string): string[] {
+  return Array.from(new Set(text.match(URL_REGEX) ?? [])).map((url) => url.replace(/[.,)]+$/, ''));
+}
+
+/** Flatten a layer tree into mention candidates (skips the root Body layer). */
+function flattenLayerMentions(layers: Layer[], acc: Mention[] = []): Mention[] {
+  for (const layer of layers) {
+    if (layer.id !== 'body') {
+      acc.push({ type: 'layer', id: layer.id, label: getLayerName(layer) });
+    }
+    if (layer.children?.length) flattenLayerMentions(layer.children, acc);
+  }
+  return acc;
+}
 
 /** Read an image File into a base64 attachment, or null if it's unsupported. */
 function fileToImageAttachment(file: File): Promise<ImageAttachment | null> {
@@ -65,14 +102,39 @@ export default function AiChatPanel({ embedded = false }: AiChatPanelProps) {
   const draftLayers = usePagesStore((s) =>
     currentPageId ? s.draftsByPageId[currentPageId]?.layers : undefined,
   );
+  const pages = usePagesStore((s) => s.pages);
+  const collections = useCollectionsStore((s) => s.collections);
 
   const [input, setInput] = useState('');
   const [contextDetached, setContextDetached] = useState(false);
   const [images, setImages] = useState<ImageAttachment[]>([]);
+  const [mentions, setMentions] = useState<Mention[]>([]);
+  const [mentionState, setMentionState] = useState<{ query: string; start: number } | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const isStreaming = status === 'streaming';
+
+  const mentionCandidates = useMemo<Mention[]>(() => {
+    const fromPages: Mention[] = pages.map((page) => ({ type: 'page', id: page.id, label: page.name }));
+    const fromCollections: Mention[] = collections.map((collection) => ({
+      type: 'collection',
+      id: collection.id,
+      label: collection.name,
+    }));
+    const fromLayers: Mention[] = draftLayers ? flattenLayerMentions(draftLayers) : [];
+    return [...fromPages, ...fromCollections, ...fromLayers];
+  }, [pages, collections, draftLayers]);
+
+  const mentionResults = useMemo<Mention[]>(() => {
+    if (mentionState === null) return [];
+    const query = mentionState.query.toLowerCase();
+    return mentionCandidates
+      .filter((candidate) => candidate.label.toLowerCase().includes(query))
+      .slice(0, MAX_MENTION_RESULTS);
+  }, [mentionState, mentionCandidates]);
 
   const selectedRefs = useMemo<SelectedLayerRef[]>(() => {
     if (!selectedLayerIds.length || !draftLayers) return [];
@@ -106,15 +168,75 @@ export default function AiChatPanel({ embedded = false }: AiChatPanelProps) {
     }
   };
 
+  const closeMention = () => setMentionState(null);
+
+  const handleInputChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = event.target.value;
+    setInput(value);
+    const active = getActiveMention(value, event.target.selectionStart ?? value.length);
+    setMentionState(active);
+    setMentionIndex(0);
+  };
+
+  const insertMention = (candidate: Mention) => {
+    if (mentionState === null) return;
+    const caret = textareaRef.current?.selectionStart ?? input.length;
+    const before = input.slice(0, mentionState.start);
+    const after = input.slice(caret);
+    const token = `@${candidate.label} `;
+    const nextText = before + token + after;
+    setInput(nextText);
+    setMentions((prev) =>
+      prev.some((m) => m.type === candidate.type && m.id === candidate.id) ? prev : [...prev, candidate],
+    );
+    closeMention();
+    requestAnimationFrame(() => {
+      const pos = (before + token).length;
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(pos, pos);
+    });
+  };
+
   const submit = (text: string) => {
     if ((!text.trim() && images.length === 0) || isStreaming) return;
     setInput('');
-    const attachment = { selectedLayers: attachedRefs, images };
+    const usedMentions = mentions.filter((mention) => text.includes(`@${mention.label}`));
+    const attachment = {
+      selectedLayers: attachedRefs,
+      images,
+      mentions: usedMentions,
+      referenceUrls: parseUrls(text),
+    };
     setImages([]);
+    setMentions([]);
+    closeMention();
     void sendMessage(text, attachment);
   };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (mentionState !== null && mentionResults.length > 0) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setMentionIndex((index) => (index + 1) % mentionResults.length);
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setMentionIndex((index) => (index - 1 + mentionResults.length) % mentionResults.length);
+        return;
+      }
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        event.preventDefault();
+        insertMention(mentionResults[Math.min(mentionIndex, mentionResults.length - 1)]);
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeMention();
+        return;
+      }
+    }
+
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       submit(input);
@@ -256,6 +378,13 @@ export default function AiChatPanel({ embedded = false }: AiChatPanelProps) {
           </div>
         )}
         <div className="relative">
+          {mentionState !== null && mentionResults.length > 0 && (
+            <MentionMenu
+              results={mentionResults}
+              activeIndex={Math.min(mentionIndex, mentionResults.length - 1)}
+              onPick={insertMention}
+            />
+          )}
           <input
             ref={fileInputRef}
             type="file"
@@ -265,11 +394,13 @@ export default function AiChatPanel({ embedded = false }: AiChatPanelProps) {
             onChange={handleFileChange}
           />
           <Textarea
+            ref={textareaRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={handleInputChange}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
-            placeholder="Ask AI to build or edit your page..."
+            onBlur={closeMention}
+            placeholder="Ask AI to build, edit, or @mention a page, collection, or layer..."
             rows={2}
             className="pl-10 pr-10 resize-none"
           />
@@ -309,6 +440,37 @@ export default function AiChatPanel({ embedded = false }: AiChatPanelProps) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function MentionMenu({
+  results,
+  activeIndex,
+  onPick,
+}: {
+  results: Mention[];
+  activeIndex: number;
+  onPick: (mention: Mention) => void;
+}) {
+  return (
+    <div className="absolute bottom-full left-0 right-0 mb-2 max-h-56 overflow-y-auto rounded-lg border bg-popover shadow-md py-1 z-50">
+      {results.map((result, index) => (
+        <button
+          key={`${result.type}-${result.id}`}
+          type="button"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => onPick(result)}
+          className={cn(
+            'flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs',
+            index === activeIndex ? 'bg-accent text-accent-foreground' : 'hover:bg-muted',
+          )}
+        >
+          <Icon name={MENTION_ICON[result.type]} className="size-3 shrink-0 text-muted-foreground" />
+          <span className="truncate">{result.label}</span>
+          <span className="ml-auto shrink-0 text-[10px] capitalize text-muted-foreground">{result.type}</span>
+        </button>
+      ))}
     </div>
   );
 }

@@ -36,6 +36,10 @@ const bodySchema = z.object({
   pageId: z.string().nullish(),
   selectedLayerIds: z.array(z.string()).optional(),
   selectedLayers: z.array(z.object({ id: z.string(), name: z.string().optional() })).optional(),
+  mentions: z
+    .array(z.object({ type: z.enum(['page', 'collection', 'layer']), id: z.string(), label: z.string() }))
+    .optional(),
+  referenceUrls: z.array(z.string()).optional(),
 });
 
 export async function POST(request: Request): Promise<Response> {
@@ -85,6 +89,8 @@ export async function POST(request: Request): Promise<Response> {
             pageId: parsed.pageId,
             selectedLayerIds: parsed.selectedLayerIds,
             selectedLayers: parsed.selectedLayers,
+            mentions: parsed.mentions,
+            referenceUrls: parsed.referenceUrls,
           },
           signal: abortController.signal,
         })) {
