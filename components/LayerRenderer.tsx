@@ -1141,7 +1141,14 @@ const LayerItemImpl: React.FC<{
       if (valueToRender !== undefined) {
         // Value is typed as ComponentVariableValue - check if it's a text variable (has 'type' property)
         if ('type' in valueToRender && valueToRender.type === 'dynamic_rich_text') {
-          return renderRichText(valueToRender as any, collectionLayerData, pageCollectionItemData || undefined, layer.textStyles, useSpanForParagraphs, isEditMode, linkContext, timezone, effectiveLayerDataMap, allComponents, renderComponentBlock, effectiveAncestorIds, isSimpleTextLayer, globalsMeta);
+          // For heading/text layers, flatten multi-paragraph content so the
+          // wrapper's typography applies instead of inner block styles — matches
+          // the public/preview renderer and the other rich-text branches.
+          const richTextValue = valueToRender as any;
+          const variable = isSimpleTextLayer
+            ? { ...richTextValue, data: { ...richTextValue.data, content: flattenTiptapParagraphs(richTextValue.data.content) } }
+            : richTextValue;
+          return renderRichText(variable as any, collectionLayerData, pageCollectionItemData || undefined, layer.textStyles, useSpanForParagraphs, isEditMode, linkContext, timezone, effectiveLayerDataMap, allComponents, renderComponentBlock, effectiveAncestorIds, isSimpleTextLayer, globalsMeta);
         }
         if ('type' in valueToRender && valueToRender.type === 'dynamic_text') {
           return (valueToRender as any).data.content;
