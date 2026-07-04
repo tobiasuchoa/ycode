@@ -41,10 +41,11 @@ const tools: AgentToolLike[] = getAgentTools();
 console.log(`Shared agent registry: ${tools.length} tools\n`);
 
 let converted = 0;
+let payloadChars = 0;
 const failures: string[] = [];
 for (const tool of tools) {
   try {
-    toAnthropicTool(tool);
+    payloadChars += JSON.stringify(toAnthropicTool(tool)).length;
     converted += 1;
   } catch (err) {
     failures.push(`${tool.name}: ${err instanceof Error ? err.message : String(err)}`);
@@ -54,6 +55,7 @@ for (const tool of tools) {
 }
 
 console.log(`\nAnthropic schema conversion: ${converted}/${tools.length} succeeded.`);
+console.log(`Total Anthropic tools payload: ${payloadChars} chars (~${Math.round(payloadChars / 4)} tokens).`);
 if (failures.length > 0) {
   console.log('Failures:');
   failures.forEach((f) => console.log(`  - ${f}`));
