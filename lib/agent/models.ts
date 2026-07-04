@@ -17,11 +17,11 @@ export const AGENT_MODELS: AgentModelOption[] = [
 ];
 
 /**
- * Model selected by default in the picker. Opus is the strongest builder model,
- * matching the default users expect from comparable AI site builders. Users can
- * switch to a cheaper model from the dropdown.
+ * Model selected by default in the picker. Sonnet handles the builder workload
+ * well at ~2.5x lower cost than Opus; users who want the strongest model can
+ * switch to Opus from the dropdown.
  */
-export const DEFAULT_AGENT_MODEL = 'claude-opus-4-8';
+export const DEFAULT_AGENT_MODEL = 'claude-sonnet-5';
 
 /** Whether a requested model id is one the agent is allowed to use. */
 export function isAllowedModel(id: string): boolean {

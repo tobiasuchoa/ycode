@@ -684,15 +684,21 @@ export const useAiChatStore = create<AiChatStore>()(
     },
     {
       name: 'ycode-ai-chat',
-      version: 2,
+      version: 3,
       // v2 dropped the "Default" picker option in favour of an explicit model.
-      // Map the legacy `null` (= "use server default") onto the new default so
-      // returning users land on Opus like everyone else; leave any explicit
-      // model choice (e.g. Sonnet) untouched.
+      // Map the legacy `null` (= "use server default") onto the current default;
+      // leave any explicit model choice untouched.
+      // v3 changed the default from Opus to Sonnet. Persisted "claude-opus-4-8"
+      // is almost always the old default rather than a deliberate pick (Opus was
+      // preselected for everyone), so remap it once; anyone who really wants
+      // Opus can re-select it from the dropdown.
       migrate: (persisted, fromVersion) => {
-        const state = (persisted ?? {}) as Partial<AiChatState>;
+        let state = (persisted ?? {}) as Partial<AiChatState>;
         if (fromVersion < 2 && (state.model === null || state.model === undefined)) {
-          return { ...state, model: DEFAULT_AGENT_MODEL };
+          state = { ...state, model: DEFAULT_AGENT_MODEL };
+        }
+        if (fromVersion < 3 && state.model === 'claude-opus-4-8') {
+          state = { ...state, model: DEFAULT_AGENT_MODEL };
         }
         return state;
       },
