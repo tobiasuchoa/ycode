@@ -24,6 +24,15 @@ function getCacheKey(entityType: VersionEntityType, entityId: string): string {
   return `${entityType}:${entityId}`;
 }
 
+/**
+ * Build the version-tracking entity id for a component variant. Each variant
+ * keeps its own undo/redo history, keyed by `${componentId}:${variantId}`, so
+ * edits to a non-primary variant are tracked independently.
+ */
+export function componentVersionEntityId(componentId: string, variantId?: string | null): string {
+  return variantId ? `${componentId}:${variantId}` : componentId;
+}
+
 /** Get the cached previous state, parsing the stored JSON. */
 export function getPreviousState(entityType: VersionEntityType, entityId: string): any | null {
   const stored = previousStatesCache.get(getCacheKey(entityType, entityId));

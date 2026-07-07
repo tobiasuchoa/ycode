@@ -795,6 +795,7 @@ const CenterCanvas = React.memo(function CenterCanvas({
   } = useUndoRedo({
     entityType: undoRedoEntityType,
     entityId: undoRedoEntityId,
+    variantId: editingComponentId ? activeComponentVariantId : null,
     autoInit: true,
   });
 

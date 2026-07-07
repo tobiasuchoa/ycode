@@ -10,6 +10,15 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
+ * Whether the user currently has a non-empty text selection.
+ * Used to avoid hijacking Cmd/Ctrl+C when the user is copying plain text.
+ */
+export function hasTextSelection(): boolean {
+  if (typeof window === 'undefined') return false;
+  return (window.getSelection()?.toString().trim().length ?? 0) > 0;
+}
+
+/**
  * Input Sanitization Utilities
  * Centralized helpers for cleaning user input values
  */

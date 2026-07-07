@@ -17,6 +17,7 @@ import { resolveComponents, applyComponentOverrides } from '@/lib/resolve-compon
 import { getComponentVariantLayers } from '@/lib/component-variant-utils';
 import { isTiptapDoc, hasBlockElementsWithResolver } from '@/lib/tiptap-utils';
 import { castValue, parseMultiReferenceValue, remapLayerIdsForCollectionItem } from '@/lib/collection-utils';
+import { isValidUUID } from '@/lib/utils';
 import { DEFAULT_TEXT_STYLES } from '@/lib/text-format-utils';
 
 // Pagination context passed through to resolveCollectionLayers
@@ -1212,7 +1213,11 @@ async function batchResolveReferenceFields(
   for (const values of itemsValues) {
     for (const field of referenceFields) {
       const refId = values[field.id];
-      if (refId && field.reference_collection_id) {
+      // Reference values are item UUIDs. Skip malformed values (e.g. a name left
+      // behind by a bad import): feeding a non-UUID into the `.in('id', …)` fetch
+      // errors the entire batch (`invalid input syntax for type uuid`), which
+      // would break rendering for every item, not just the corrupt field.
+      if (refId && isValidUUID(refId) && field.reference_collection_id) {
         allRefItemIds.add(refId);
         refCollectionIds.add(field.reference_collection_id);
       }
@@ -2394,6 +2399,12 @@ export async function resolveCollectionLayers(
   // resolve "current page item" against the outermost page item, never the
   // nearest enclosing collection.
   pageCollectionItemId?: string,
+  // Seeds the internal layer-data map so bindings inside `layers` that read from
+  // an ancestor collection layer (via `collection_layer_id`) resolve correctly
+  // even when that ancestor isn't part of `layers`. Used by the filter render
+  // path, which resolves a single collection item's children without the
+  // enclosing collection layer that SSR would otherwise seed here.
+  initialLayerDataMap?: Record<string, Record<string, string>>,
 ): Promise<Layer[]> {
   // Reuse caller-provided timezone, or fetch once for the entire tree
   if (!timezone) {
@@ -3162,7 +3173,7 @@ export async function resolveCollectionLayers(
     return layer;
   };
 
-  const result = await Promise.all(layers.map(layer => resolveLayer(layer, parentItemValues, undefined, parentCollectionItemId)));
+  const result = await Promise.all(layers.map(layer => resolveLayer(layer, parentItemValues, initialLayerDataMap, parentCollectionItemId)));
 
   // Collect pagination metadata from all fragments
   const paginationMetaMap: Record<string, CollectionPaginationMeta> = {};
@@ -3713,13 +3724,44 @@ export async function renderCollectionItemsToHtml(
     return { item, rawValues, formattedValues };
   });
 
+  // Scope reference resolution to the fields actually bound in this template,
+  // mirroring SSR (`resolveCollectionLayers`). Resolving every reference field
+  // regardless of use pulls in unrelated fields — and a single corrupt value
+  // (e.g. a non-UUID stored on an unused reference field) would otherwise error
+  // the whole batch item fetch and 500 the filter request.
+  //
+  // `collectBoundFieldIds` stops descending at nested collection boundaries, so
+  // a single scan of the root misses bindings that live *inside* a nested
+  // collection layer but read from this (ancestor) collection — e.g. a State
+  // reference name shown inside a nested States collection. Scan every collection
+  // layer scope separately and union their paths, exactly like SSR's
+  // `scanCollectionLayersForBounds` re-attribution, so those cross-scope
+  // reference dot-paths (`<refField>.<name>`) are resolved and don't render empty.
+  const scanRoot: Layer = collectionLayer
+    ? ({ ...collectionLayer, children: layerTemplate } as Layer)
+    : ({ id: collectionLayerId, name: 'div', children: layerTemplate } as unknown as Layer);
+  const templateBoundPaths = new Set<string>();
+  const collectScopedBoundPaths = (layerList: Layer[]) => {
+    for (const layer of layerList) {
+      if (layer.variables?.collection?.id) {
+        const { fieldPaths } = collectBoundFieldIds([layer]);
+        for (const p of fieldPaths) templateBoundPaths.add(p);
+      }
+      if (layer.children) collectScopedBoundPaths(layer.children);
+    }
+  };
+  collectScopedBoundPaths([scanRoot]);
+  // `scanRoot` may be a synthetic wrapper without a collection variable; ensure
+  // its own scope is captured regardless.
+  for (const p of collectBoundFieldIds([scanRoot]).fieldPaths) templateBoundPaths.add(p);
+
   // Batch-resolve reference fields for ALL items (2–3 queries total)
   const allEnhancedValues = await batchResolveReferenceFields(
     preprocessed.map(p => p.formattedValues),
     collectionFields,
     isPublished,
     undefined,
-    undefined,
+    templateBoundPaths.size > 0 ? templateBoundPaths : undefined,
     translations,
   );
 
@@ -3749,7 +3791,13 @@ export async function renderCollectionItemsToHtml(
       );
 
       // Resolve nested collection layers (sub-collections like "shades" inside "colors")
-      // Pass item.values so nested collections can filter based on parent item's field values
+      // Pass item.values so nested collections can filter based on parent item's field values.
+      // Seed the layer-data map with this (parent) collection layer's resolved
+      // values so bindings inside a nested collection that read from the parent
+      // via `collection_layer_id` (e.g. a State reference name shown inside a
+      // nested States collection) resolve instead of rendering empty — SSR seeds
+      // this when it resolves the enclosing collection layer, which the filter
+      // render path strips.
       let resolvedLayers = await resolveCollectionLayers(
         injectedLayers,
         isPublished,
@@ -3759,6 +3807,7 @@ export async function renderCollectionItemsToHtml(
         item.id,
         htmlTimezone,
         pageLinkContext?.pageCollectionItemId,
+        { [collectionLayerId]: enhancedValues },
       );
 
       // Resolve all AssetVariables to URLs server-side

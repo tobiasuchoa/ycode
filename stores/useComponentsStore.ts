@@ -564,14 +564,17 @@ export const useComponentsStore = create<ComponentsStore>((set, get) => {
         for (const variant of variants) {
           variantDrafts[variant.id] = JSON.parse(JSON.stringify(variant.layers ?? []));
         }
-        // Layers used for version tracking — track the primary variant for now.
-        const primaryLayers = variantDrafts[variants[0].id] ?? [];
 
-        // Mark entity as initializing BEFORE updating store to prevent false change detection
+        // Mark each variant as initializing BEFORE updating store to prevent
+        // false change detection. Undo/redo is scoped per variant.
         try {
           const { markEntityInitializing, updatePreviousState } = await import('@/hooks/use-undo-redo');
-          markEntityInitializing('component', componentId);
-          updatePreviousState('component', componentId, primaryLayers);
+          const { componentVersionEntityId } = await import('@/lib/version-tracking');
+          for (const variant of variants) {
+            const versionId = componentVersionEntityId(componentId, variant.id);
+            markEntityInitializing('component', versionId);
+            updatePreviousState('component', versionId, variantDrafts[variant.id]);
+          }
         } catch (err) {
           console.error('Failed to mark component as initializing:', err);
         }
@@ -587,9 +590,15 @@ export const useComponentsStore = create<ComponentsStore>((set, get) => {
           },
         }));
 
-        // Initialize version tracking with loaded state
-        import('@/lib/version-tracking').then(({ initializeVersionTracking }) => {
-          initializeVersionTracking('component', componentId, primaryLayers);
+        // Initialize version tracking with loaded state (per variant)
+        import('@/lib/version-tracking').then(({ initializeVersionTracking, componentVersionEntityId }) => {
+          for (const variant of variants) {
+            initializeVersionTracking(
+              'component',
+              componentVersionEntityId(componentId, variant.id),
+              variantDrafts[variant.id]
+            );
+          }
         }).catch((err) => {
           console.error('Failed to initialize component version tracking:', err);
         });
@@ -709,9 +718,17 @@ export const useComponentsStore = create<ComponentsStore>((set, get) => {
             isSaving: false,
           }));
 
-          // Record version for undo/redo only if variants match what we saved.
-          import('@/lib/version-tracking').then(({ recordVersionViaApi }) => {
-            recordVersionViaApi('component', componentId, layersBeingSaved);
+          // Record a version per variant for undo/redo. Each variant has its
+          // own history; unchanged variants produce an empty patch and are
+          // skipped inside recordVersionViaApi.
+          import('@/lib/version-tracking').then(({ recordVersionViaApi, componentVersionEntityId }) => {
+            for (const variant of variantsBeingSaved) {
+              recordVersionViaApi(
+                'component',
+                componentVersionEntityId(componentId, variant.id),
+                variant.layers
+              );
+            }
           }).catch((err) => {
             console.error('Failed to record component version:', err);
           });
