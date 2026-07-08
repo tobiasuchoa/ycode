@@ -234,8 +234,21 @@ structure but can override content via **variables** (text, rich_text, image, li
 audio/video, icon, variant).
 
 Workflow: create_component (with variables) → update_component_layers to build the tree
-(works like batch_operations; link variables via variable_id in add_layer or the
-link_variable operation).
+(works like batch_operations).
+
+**A variable does NOTHING until it is linked to a layer.** After you define variables you
+MUST link each one to the layer that shows it, or instances have nothing to override.
+Link either at creation (pass variable_id on the add_layer operation) or afterwards with a
+link_variable operation. The link target is derived automatically from the variable's
+declared type — text/rich_text bind the text layer, image/icon/video/audio bind that
+media layer's source, link binds the layer's link, variant binds a nested component
+instance's variant. You do not pass the type; just the layer and variable_id.
+
+Example: a "Feature Card" with title/description/image/button-link variables → add a
+heading (variable_id: title), a richText or text (variable_id: description), an image
+(variable_id: image), and a button whose link you bind with link_variable
+(variable_id: button-link). Read the component back with get_component to confirm each
+layer shows its linked variable before finishing.
 
 A component can have multiple named **variants** ("Default", "Small", "Dark") that share
 variables but have independent layer trees — see the component variant tools. Pass

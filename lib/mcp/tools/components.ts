@@ -198,14 +198,16 @@ content overrides are not settable here yet, so it shows the component's default
     'create_component',
     `Create a new reusable component. A component is a layer tree with optional variables.
 
-Variables let each instance of the component override specific content (text, images, links).
-When defining variables, you get back variable IDs. Then link them to layers by setting
-the variable's ID on the layer's variable reference (e.g. layer.variables.text.id = variable_id).
+Variables let each instance override specific content (text, images, links). Defining a
+variable is only half the job: a variable does NOTHING until it is linked to a layer.
+The response returns the variable IDs — then use update_component_layers to build the tree
+AND link each variable (pass variable_id on add_layer, or use the link_variable operation).
 
 EXAMPLE: A "Card" component with a title variable:
-1. Create component with variables: [{ name: "Card title", type: "text" }]
+1. create_component with variables: [{ name: "Card title", type: "text" }]
 2. The response includes the variable IDs
-3. Update the component's layers to link the variable to a text layer`,
+3. update_component_layers: add a heading with variable_id set to the title variable's ID
+   (or add the heading, then link_variable). Instances can now override the title.`,
     {
       name: z.string().describe('Component name (e.g. "Hero Section", "Feature Card")'),
       variables: z.array(variableSchema).optional()
@@ -443,6 +445,14 @@ EXAMPLE: A "Card" component with a title variable:
     `Modify a component's layer tree. Works like batch_operations but for component layers.
 Use ref_id in add_layer to name layers, then reference them in later operations.
 
+LINKING VARIABLES: A component variable does nothing until it is linked to a layer. Link it
+by passing variable_id on the add_layer operation, or with a separate link_variable operation.
+The link target and shape are derived automatically from the variable's declared type (you do
+NOT need to pass a type, and the layer's slot is created if missing): text/rich_text bind the
+text layer, image/icon/video/audio bind that media layer's source, link binds the layer's link,
+variant binds a nested component instance's variant. Passing a variable_id that doesn't exist on
+the component is an error.
+
 Pass variant_id to target a specific named variant; omit it to update the primary variant
 (variants[0]), which is what most components have.`,
     {
@@ -463,7 +473,7 @@ Pass variant_id to target a specific named variant; omit it to update the primar
           design: designSchema.optional(),
           image_asset_id: z.string().optional().describe('For image layers: asset ID to display'),
           variable_id: z.string().optional()
-            .describe('Component variable ID to link to this layer\'s primary content (text/image/link)'),
+            .describe('Component variable ID to link to this layer. The bind target is derived from the variable\'s type (text/rich_text/image/link/icon/audio/video/variant) — do not pass a type. Must be an existing variable on the component.'),
         }),
         z.object({
           type: z.literal('update_design'),
@@ -507,8 +517,9 @@ Pass variant_id to target a specific named variant; omit it to update the primar
         z.object({
           type: z.literal('link_variable'),
           layer_id: z.string().describe('Layer ID or ref_id'),
-          variable_id: z.string().describe('Component variable ID to link'),
-          variable_type: variableTypeEnum.default('text'),
+          variable_id: z.string().describe('Component variable ID to link. Must exist on the component.'),
+          variable_type: variableTypeEnum.default('text')
+            .describe('Optional/legacy — the type is auto-detected from the variable definition. Ignored when the variable exists.'),
         }),
       ])).min(1).max(50),
     },
@@ -536,6 +547,12 @@ Pass variant_id to target a specific named variant; omit it to update the primar
 
       let layers = variants[targetIdx].layers || [];
       const refMap = new Map<string, string>();
+      // Component variables by id, so we can derive the correct link type from
+      // the component definition (never from the layer template) and validate
+      // that a variable_id actually exists before linking.
+      const variablesById = new Map<string, ComponentVariable>(
+        (component.variables ?? []).map((v) => [v.id, v]),
+      );
       const results: Array<{ op: number; status: string; detail: string }> = [];
 
       for (let i = 0; i < operations.length; i++) {
@@ -566,13 +583,21 @@ Pass variant_id to target a specific named variant; omit it to update the primar
                 };
               }
 
+              let linkDetail = '';
               if (op.variable_id) {
-                newLayer = linkVariableToLayer(newLayer, op.variable_id, op.template);
+                const variable = variablesById.get(op.variable_id);
+                if (!variable) {
+                  results.push({ op: i, status: 'error', detail: `Variable "${op.variable_id}" not found on component — layer not added. Create the variable first (create_component/update_component), then link it.` });
+                  continue;
+                }
+                const variableType = variable.type ?? 'text';
+                newLayer = linkVariableToLayer(newLayer, op.variable_id, variableType);
+                linkDetail = ` linked to variable "${variable.name}" (${variableType})`;
               }
 
               if (op.ref_id) refMap.set(op.ref_id, newLayer.id);
               layers = insertLayer(layers, parentId, newLayer, op.position);
-              results.push({ op: i, status: 'ok', detail: `Added ${op.template} (id: ${newLayer.id})` });
+              results.push({ op: i, status: 'ok', detail: `Added ${op.template} (id: ${newLayer.id})${linkDetail}` });
               break;
             }
 
@@ -597,7 +622,13 @@ Pass variant_id to target a specific named variant; omit it to update the primar
                 ...l,
                 variables: {
                   ...l.variables,
-                  text: { type: 'dynamic_rich_text', data: { content: getTiptapTextContent(op.text) } },
+                  // Preserve any linked component-variable id so setting content
+                  // does not accidentally unlink the layer.
+                  text: {
+                    ...(l.variables?.text?.id ? { id: l.variables.text.id } : {}),
+                    type: 'dynamic_rich_text',
+                    data: { content: getTiptapTextContent(op.text) },
+                  },
                 },
               }));
               results.push({ op: i, status: 'ok', detail: `Set text on "${layer.customName || layer.name}"` });
@@ -610,13 +641,19 @@ Pass variant_id to target a specific named variant; omit it to update the primar
               if (!layer) { results.push({ op: i, status: 'error', detail: `Layer "${op.layer_id}" not found` }); continue; }
               layers = updateLayerById(layers, layerId, (l) => {
                 const existing = (l.variables?.image || {}) as Record<string, unknown>;
+                const existingSrc = l.variables?.image?.src as { id?: string } | undefined;
                 return {
                   ...l,
                   variables: {
                     ...l.variables,
                     image: {
                       ...existing,
-                      src: { type: 'asset' as const, data: { asset_id: op.asset_id } },
+                      // Preserve any linked component-variable id on src.
+                      src: {
+                        type: 'asset' as const,
+                        ...(existingSrc?.id ? { id: existingSrc.id } : {}),
+                        data: { asset_id: op.asset_id },
+                      },
                       alt: (existing.alt || { type: 'dynamic_text' as const, data: { content: '' } }) as { type: 'dynamic_text'; data: { content: string } },
                     },
                   },
@@ -633,7 +670,16 @@ Pass variant_id to target a specific named variant; omit it to update the primar
               const tiptapDoc = buildTiptapDoc(op.blocks as RichTextBlock[]);
               layers = updateLayerById(layers, layerId, (l) => ({
                 ...l,
-                variables: { ...l.variables, text: { type: 'dynamic_rich_text', data: { content: tiptapDoc } } },
+                variables: {
+                  ...l.variables,
+                  // Preserve any linked component-variable id so setting content
+                  // does not accidentally unlink the layer.
+                  text: {
+                    ...(l.variables?.text?.id ? { id: l.variables.text.id } : {}),
+                    type: 'dynamic_rich_text',
+                    data: { content: tiptapDoc },
+                  },
+                },
               }));
               results.push({ op: i, status: 'ok', detail: `Set rich text on "${layer.customName || layer.name}" (${op.blocks.length} blocks)` });
               break;
@@ -671,10 +717,18 @@ Pass variant_id to target a specific named variant; omit it to update the primar
               const layerId = refMap.get(op.layer_id) || op.layer_id;
               const layer = findLayerById(layers, layerId);
               if (!layer) { results.push({ op: i, status: 'error', detail: `Layer "${op.layer_id}" not found` }); continue; }
+              const variable = variablesById.get(op.variable_id);
+              if (!variable) {
+                results.push({ op: i, status: 'error', detail: `Variable "${op.variable_id}" not found on component. Create the variable first (create_component/update_component), then link it.` });
+                continue;
+              }
+              // The variable's declared type is authoritative; op.variable_type is
+              // only a legacy fallback for callers that omit a real variable.
+              const variableType = variable.type ?? op.variable_type;
               layers = updateLayerById(layers, layerId, (l) =>
-                linkVariableToLayer(l, op.variable_id, op.variable_type),
+                linkVariableToLayer(l, op.variable_id, variableType),
               );
-              results.push({ op: i, status: 'ok', detail: `Linked variable to "${layer.customName || layer.name}"` });
+              results.push({ op: i, status: 'ok', detail: `Linked variable "${variable.name}" (${variableType}) to "${layer.customName || layer.name}"` });
               break;
             }
           }
@@ -757,76 +811,63 @@ function cloneLayerWithNewIds(layer: Layer): Layer {
 }
 
 /**
- * Link a component variable to a layer's primary content slot.
- * Sets the variable's `id` field so the component system resolves overrides.
+ * Link a component variable to a layer's content slot, creating the slot when it
+ * does not exist yet. Mirrors the editor UI handlers (ImageSettings,
+ * LinkSettings, etc.) so agent-built components behave like hand-built ones.
+ * The linked id lives at a per-type location the runtime resolves:
+ *   text/rich_text -> variables.text.id
+ *   image/audio/video/icon -> variables.<type>.src.id
+ *   link -> variables.link.variable_id (note: variable_id, not id)
+ *   variant -> layer.componentVariantVariableId
  */
 function linkVariableToLayer(layer: Layer, variableId: string, variableType: string): Layer {
   const vars = { ...layer.variables };
+  const assetSrc = { type: 'asset' as const, id: variableId, data: { asset_id: null } };
 
   switch (variableType) {
     case 'text':
     case 'rich_text':
-      if (vars.text) {
-        vars.text = { ...vars.text, id: variableId };
-      } else {
-        vars.text = {
-          id: variableId,
-          type: 'dynamic_rich_text',
-          data: { content: { type: 'doc', content: [{ type: 'paragraph' }] } },
-        };
-      }
+      vars.text = vars.text
+        ? { ...vars.text, id: variableId }
+        : { type: 'dynamic_text' as const, id: variableId, data: { content: '' } };
       break;
 
     case 'image':
-      if (vars.image) {
-        vars.image = {
-          ...vars.image,
-          src: { ...(vars.image.src || { type: 'asset', data: { asset_id: null } }), id: variableId },
-        };
-      }
+      vars.image = vars.image
+        ? { ...vars.image, src: { ...vars.image.src, id: variableId } }
+        : { src: assetSrc, alt: { type: 'dynamic_text' as const, data: { content: '' } } };
       break;
 
     case 'link':
-      if (vars.link) {
-        // variable_id is a runtime-only extension on LinkSettings for component variable linking
-        (vars.link as unknown as Record<string, unknown>).variable_id = variableId;
-      }
+      // variable_id is a runtime extension on LinkSettings for component linking.
+      // 'none' is the sentinel link type used until a real one is chosen.
+      vars.link = (vars.link
+        ? { ...vars.link, variable_id: variableId }
+        : { type: 'none', variable_id: variableId }) as unknown as typeof vars.link;
       break;
 
     case 'audio':
-      if (vars.audio) {
-        vars.audio = {
-          ...vars.audio,
-          src: { ...(vars.audio.src || { type: 'asset', data: { asset_id: null } }), id: variableId },
-        };
-      }
+      vars.audio = vars.audio
+        ? { ...vars.audio, src: { ...vars.audio.src, id: variableId } }
+        : { src: assetSrc };
       break;
 
     case 'video':
-      if (vars.video) {
-        vars.video = {
-          ...vars.video,
-          src: { ...(vars.video.src || { type: 'asset', data: { asset_id: null } }), id: variableId },
-        };
-      }
+      vars.video = vars.video
+        ? { ...vars.video, src: { ...(vars.video.src ?? assetSrc), id: variableId } }
+        : { src: assetSrc };
       break;
 
     case 'icon':
-      if (vars.icon) {
-        vars.icon = {
-          ...vars.icon,
-          src: { ...(vars.icon.src || { type: 'asset', data: { asset_id: null } }), id: variableId },
-        };
-      }
+      vars.icon = vars.icon
+        ? { ...vars.icon, src: { ...(vars.icon.src ?? assetSrc), id: variableId } }
+        : { src: assetSrc };
       break;
 
-    case 'variant': {
-      // Variant variables target the layer's nested-component variant override.
-      // The runtime reads componentVariantId; the variable_id wires up the override slot.
-      const next = { ...layer } as Layer & { componentVariantVariableId?: string };
-      next.componentVariantVariableId = variableId;
-      return { ...next, variables: vars };
-    }
+    case 'variant':
+      // Variant variables target the layer's nested-component variant override
+      // via a top-level layer field (not inside variables).
+      return { ...layer, componentVariantVariableId: variableId, variables: vars };
   }
 
   return { ...layer, variables: vars };

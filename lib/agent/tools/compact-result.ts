@@ -37,6 +37,7 @@ interface RawLayer {
   settings?: { tag?: string };
   attributes?: { id?: string };
   variables?: { text?: { data?: { content?: unknown } } } & Record<string, unknown>;
+  componentVariantVariableId?: string;
   children?: RawLayer[];
 }
 
@@ -104,8 +105,10 @@ function compactLayer(layer: RawLayer, includeVariableRefs = false): Record<stri
   if (layer.componentId) out.componentInstance = true;
 
   if (includeVariableRefs) {
-    const refs = collectVariableRefs(layer.variables);
-    if (refs) out.variableRefs = refs;
+    const refs = collectVariableRefs(layer.variables) ?? {};
+    // Variant links live on a top-level layer field, not inside variables.
+    if (layer.componentVariantVariableId) refs.variant = layer.componentVariantVariableId;
+    if (Object.keys(refs).length > 0) out.variableRefs = refs;
   }
 
   if (Array.isArray(layer.children) && layer.children.length > 0) {
@@ -126,11 +129,14 @@ function collectVariableRefs(variables?: Record<string, unknown>): Record<string
   const refs: Record<string, string> = {};
   for (const [slot, value] of Object.entries(variables)) {
     if (!value || typeof value !== 'object') continue;
-    const typed = value as { id?: unknown; src?: { id?: unknown } };
+    const typed = value as { id?: unknown; src?: { id?: unknown }; variable_id?: unknown };
     const id = typeof typed.id === 'string' ? typed.id : undefined;
     const srcId = typeof typed.src?.id === 'string' ? typed.src.id : undefined;
+    // Link variables store the ref as `variable_id` (not `id`).
+    const variableId = typeof typed.variable_id === 'string' ? typed.variable_id : undefined;
     if (id) refs[slot] = id;
     else if (srcId) refs[slot] = srcId;
+    else if (variableId) refs[slot] = variableId;
   }
 
   return Object.keys(refs).length > 0 ? refs : null;
