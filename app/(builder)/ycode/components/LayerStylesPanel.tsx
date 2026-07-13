@@ -7,8 +7,9 @@
  *
  * Layers carry an ordered stack of styles (`styleIds`, low -> high priority),
  * mirroring Webflow combo classes. The stack is shown as a row of chips; one
- * chip is "active" and is the target for New/Update/Detach/Reset/Rename/Delete.
- * A checkbox dropdown toggles which styles are in the stack (adding appends at
+ * chip is "active" and is the target for Update/Detach/Duplicate/Reset/Rename/
+ * Delete. "New" appends a fresh combo class at the top (never replaces). A
+ * checkbox dropdown toggles which styles are in the stack (adding appends at
  * the end = highest priority), and chips can be dragged to reorder.
  *
  * Rich-text inline styles (text-style mode) keep the original single-select
@@ -29,6 +30,7 @@ import {
   verticalListSortingStrategy,
   useSortable,
 } from '@dnd-kit/sortable';
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { CSS } from '@dnd-kit/utilities';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -37,6 +39,7 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Empty, EmptyTitle } from '@/components/ui/empty';
@@ -128,7 +131,7 @@ function SortableStyleChip({
     >
       <Icon name="grip-vertical" className="size-3 text-muted-foreground shrink-0" />
       <span className="flex min-w-0 flex-1 flex-col items-start leading-tight">
-        <span className="truncate">{style.name}</span>
+        <span className="w-full truncate">{style.name}</span>
         {isCustomized && (
           <span className="text-yellow-400 text-[10px]">Customized</span>
         )}
@@ -291,19 +294,19 @@ export default function LayerStylesPanel({
   }, [layer, stylesById, onLayerUpdate, setActiveStyleId]);
 
   /**
-   * "New" creates a fresh style and immediately opens rename.
+   * "New" adds a fresh style, Webflow-style, then opens rename.
    *
-   * With an active chip, it FORKS that chip: the new style captures the chip's
-   * current (possibly customized) classes, swaps into the stack at the chip's
-   * position, and the chip's local override is dropped (now baked into the new
-   * style). On a style-less layer / text style it captures the current styling
-   * and applies it. In all cases we jump straight into the rename field.
+   * On a style-less layer / text style it captures the current styling into the
+   * new style (turning ad-hoc classes into a reusable style). On a layer that
+   * already has a stack, it APPENDS a new empty combo class at the top so the
+   * existing styles are kept — it never replaces the selected chip. To fork the
+   * active chip's look into a new style, use "Duplicate".
    */
   const handleNewStyle = useCallback(async () => {
     if (!layer) return;
 
     // Style-less layer or text style: capture current styling and apply.
-    if (isTextStyleMode || !activeStyleId_ || appliedStyleIds.length === 0) {
+    if (isTextStyleMode || appliedStyleIds.length === 0) {
       const style = await createStyle(
         isTextStyleMode ? 'Text style' : 'Style',
         currentClasses,
@@ -331,7 +334,40 @@ export default function LayerStylesPanel({
       return;
     }
 
-    // Active chip: fork it in place.
+    // Layer already has a stack: append a new empty combo class on top.
+    const style = await createStyle('Style', '', buildDesign(''), currentGroup);
+    if (!style) return;
+
+    const nextIds = [...appliedStyleIds, style.id];
+    const hasMap = !!layer.styleOverridesByStyle && Object.keys(layer.styleOverridesByStyle).length > 0;
+    const nextStyles = new Map(stylesById);
+    nextStyles.set(style.id, style);
+    const probe = {
+      styleIds: nextIds,
+      styleOverridesByStyle: hasMap ? layer.styleOverridesByStyle : undefined,
+      styleOverrides: layer.styleOverrides,
+    };
+    onLayerUpdate(layer.id, {
+      styleIds: nextIds,
+      styleId: nextIds[0],
+      classes: resolveLayerClasses(probe, nextStyles),
+      design: resolveLayerDesign(probe, nextStyles),
+    });
+    setActiveStyleId(style.id);
+    liveLayerStyleUpdates?.broadcastStyleCreate(style);
+    setRenameValue(style.name);
+    setIsRenaming(true);
+  }, [layer, isTextStyleMode, appliedStyleIds, currentClasses, currentDesign, currentGroup, stylesById, createStyle, onLayerUpdate, updateTextStyle, setActiveStyleId, liveLayerStyleUpdates]);
+
+  /**
+   * "Duplicate" forks the active chip into a new style: the new style captures
+   * the chip's current (possibly customized) classes, swaps into the stack at
+   * the chip's position, and the chip's local override is dropped (now baked
+   * into the new style). The rest of the stack is preserved.
+   */
+  const handleDuplicateStyle = useCallback(async () => {
+    if (!layer || isTextStyleMode || !activeStyleId_) return;
+
     const forkClasses = chipClasses(layer, activeStyleId_, stylesById);
     const sourceName = getStyleById(activeStyleId_)?.name ?? 'Style';
     const style = await createStyle(sourceName, forkClasses, buildDesign(forkClasses), currentGroup);
@@ -358,7 +394,7 @@ export default function LayerStylesPanel({
     liveLayerStyleUpdates?.broadcastStyleCreate(style);
     setRenameValue(style.name);
     setIsRenaming(true);
-  }, [layer, isTextStyleMode, activeStyleId_, appliedStyleIds, currentClasses, currentDesign, currentGroup, stylesById, getStyleById, createStyle, onLayerUpdate, updateTextStyle, setActiveStyleId, liveLayerStyleUpdates]);
+  }, [layer, isTextStyleMode, activeStyleId_, appliedStyleIds, currentGroup, stylesById, getStyleById, createStyle, onLayerUpdate, setActiveStyleId, liveLayerStyleUpdates]);
 
   // Text-style mode: apply (replace) the single style.
   const handleApplyTextStyle = useCallback((styleId: string) => {
@@ -643,6 +679,7 @@ export default function LayerStylesPanel({
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
+              modifiers={[restrictToVerticalAxis]}
               onDragEnd={handleDragEnd}
             >
               <SortableContext items={appliedStyleIds} strategy={verticalListSortingStrategy}>
@@ -725,6 +762,14 @@ export default function LayerStylesPanel({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              {activeStyle && (
+                <DropdownMenuLabel className="truncate text-xs text-foreground/80">
+                  {activeStyle.name}
+                </DropdownMenuLabel>
+              )}
+              <DropdownMenuItem onClick={handleDuplicateStyle} disabled={isTextStyleMode || !activeStyle}>
+                Duplicate
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={handleResetOverrides} disabled={!canEditOverride}>
                 Reset
               </DropdownMenuItem>
@@ -736,13 +781,13 @@ export default function LayerStylesPanel({
                 }}
                 disabled={!activeStyle}
               >
-                Rename{activeStyle ? ` "${activeStyle.name}"` : ''}
+                Rename
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => activeStyle && handleDeleteStyle(activeStyle.id)}
                 disabled={!activeStyle}
               >
-                Delete{activeStyle ? ` "${activeStyle.name}"` : ''}
+                Delete
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
