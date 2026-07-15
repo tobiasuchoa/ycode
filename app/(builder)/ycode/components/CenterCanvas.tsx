@@ -2985,7 +2985,7 @@ const CenterCanvas = React.memo(function CenterCanvas({
         {/* Preview iframe area */}
         <div
           ref={previewContainerRef}
-          className="flex-1 relative flex items-start overflow-auto"
+          className="flex-1 relative flex items-start overflow-x-auto overflow-y-hidden"
           style={{ padding: `${CANVAS_BORDER}px` }}
         >
           {isPreviewLoading && (
