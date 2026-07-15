@@ -129,6 +129,7 @@ export async function POST(
       pageCollectionItemId,
       pageCollectionSortedItemIds,
       maxTotal,
+      baseOffset = 0,
     } = body;
 
     if (!layerTemplate || !Array.isArray(layerTemplate)) {
@@ -140,6 +141,11 @@ export async function POST(
 
     const pageOffset = Math.max(0, isNaN(offset) ? 0 : offset);
     const pageLimit = isNaN(limit) || limit < 1 ? 10 : Math.min(limit, 100);
+    // Leading records the collection's `offset` skips. Applied AFTER the
+    // `maxTotal` cap so it stays consistent with SSR (cap the pool, then skip
+    // the first N). `pageOffset` from the client is relative to the resulting
+    // post-offset window, so the effective offset into the pool is the sum.
+    const baseOffsetNum = Math.max(0, isNaN(Number(baseOffset)) ? 0 : Number(baseOffset));
 
     // Pool of candidate ids: either the explicit list (multi-reference filter)
     // or every item in the collection. When SSR enforced a `maxTotal` cap
@@ -153,7 +159,10 @@ export async function POST(
       candidateIds = candidateIds.slice(0, maxTotal);
     }
 
-    const total = candidateIds.length;
+    // The paginated total excludes the offset-skipped leading records.
+    const total = Math.max(0, candidateIds.length - baseOffsetNum);
+    // Effective offset into the (sorted) candidate pool for this page window.
+    const effectiveOffset = baseOffsetNum + pageOffset;
 
     let pageRawItems: CollectionItem[] = [];
 
@@ -161,7 +170,7 @@ export async function POST(
       const { items } = await getItemsByCollectionId(collectionId, published, {
         itemIds: candidateIds,
         limit: pageLimit,
-        offset: pageOffset,
+        offset: effectiveOffset,
       });
       pageRawItems = items;
     } else if (sortBy === 'random') {
@@ -170,7 +179,7 @@ export async function POST(
       const { items } = await getItemsByCollectionId(collectionId, published, {
         itemIds: candidateIds,
         limit: pageLimit,
-        offset: pageOffset,
+        offset: effectiveOffset,
       });
       pageRawItems = items;
     } else {
@@ -185,7 +194,7 @@ export async function POST(
         }
         return sortOrder === 'desc' ? bStr.localeCompare(aStr) : aStr.localeCompare(bStr);
       });
-      const pageItemIds = sortedIds.slice(pageOffset, pageOffset + pageLimit);
+      const pageItemIds = sortedIds.slice(effectiveOffset, effectiveOffset + pageLimit);
       if (pageItemIds.length > 0) {
         const { items } = await getItemsByCollectionId(collectionId, published, {
           itemIds: pageItemIds,

@@ -240,6 +240,14 @@ function ensureLengthUnit(value: string): string {
 }
 
 /**
+ * Normalizes a grid span value to a bare Tailwind suffix.
+ * Accepts CSS-native shorthand ("span 3") as well as bare values ("3", "full", "auto").
+ */
+function normalizeGridSpanValue(value: string): string {
+  return value.replace(/^span\s+/i, '').trim();
+}
+
+/**
  * Map of Tailwind class prefixes to their property names
  * Used for conflict detection and removal
  */
@@ -250,7 +258,7 @@ const CLASS_PROPERTY_MAP: Record<string, RegExp> = {
   flexWrap: /^flex-(wrap|wrap-reverse|nowrap)$/,
   justifyContent: /^justify-(start|end|center|between|around|evenly|stretch)$/,
   alignItems: /^items-(start|end|center|baseline|stretch)$/,
-  alignSelf: /^self-(auto|start|end|center|stretch|baseline)$/,
+  alignSelf: /^self-(auto|start|end|center|baseline|stretch)$/,
   alignContent: /^content-(start|end|center|between|around|evenly|stretch)$/,
   gap: /^gap-(\[.+\]|\d+|px|0\.5|1\.5|2\.5|3\.5)$/,
   columnGap: /^gap-x-(\[.+\]|\d+|px|0\.5|1\.5|2\.5|3\.5)$/,
@@ -916,12 +924,14 @@ export function propertyToClass(
 
     // Grid Column Span
     if (property === 'gridColumnSpan') {
-      return value === 'full' ? 'col-span-full' : `col-span-${value}`;
+      const span = normalizeGridSpanValue(value);
+      return span === 'full' ? 'col-span-full' : `col-span-${span}`;
     }
 
     // Grid Row Span
     if (property === 'gridRowSpan') {
-      return value === 'full' ? 'row-span-full' : `row-span-${value}`;
+      const span = normalizeGridSpanValue(value);
+      return span === 'full' ? 'row-span-full' : `row-span-${span}`;
     }
   }
 
@@ -1457,7 +1467,7 @@ export function classesToDesign(classes: string | string[]): Layer['design'] {
     // Align Self
     if (cls.startsWith('self-')) {
       const value = cls.replace('self-', '');
-      if (['auto', 'start', 'end', 'center', 'stretch', 'baseline'].includes(value)) {
+      if (['auto', 'start', 'end', 'center', 'baseline', 'stretch'].includes(value)) {
         design.layout!.alignSelf = value;
       }
     }

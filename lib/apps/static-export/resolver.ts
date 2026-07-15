@@ -91,7 +91,7 @@ export async function* resolvePages(
     if (!isDefaultLocale) return
     const data = (await fetchErrorPage(page.error_page, true)) as PageData | null
     if (data) {
-      const resolved = renderResolved(data.page, data, folders, pages, `${page.error_page}.html`, ctx)
+      const resolved = await renderResolved(data.page, data, folders, pages, `${page.error_page}.html`, ctx)
       if (resolved) yield resolved
     }
     return
@@ -109,7 +109,7 @@ export async function* resolvePages(
       outputKey = `${localePrefix}index.html`
     }
     if (data) {
-      const resolved = renderResolved(data.page, data, folders, pages, outputKey, ctx)
+      const resolved = await renderResolved(data.page, data, folders, pages, outputKey, ctx)
       if (resolved) yield resolved
     }
     return
@@ -139,7 +139,7 @@ export async function* resolvePages(
         continue
       }
       const outputKey = `${slugPath}/index.html`
-      const resolved = renderResolved(data.page, data, folders, pages, outputKey, ctx)
+      const resolved = await renderResolved(data.page, data, folders, pages, outputKey, ctx)
       if (resolved) yield resolved
     }
     return
@@ -155,18 +155,18 @@ export async function* resolvePages(
   const outputKey = isDefaultLocale
     ? computeOutputKey(page, folders)
     : (slugPath ? `${slugPath}/index.html` : `${localePrefix}index.html`)
-  const resolved = renderResolved(data.page, data, folders, pages, outputKey, ctx)
+  const resolved = await renderResolved(data.page, data, folders, pages, outputKey, ctx)
   if (resolved) yield resolved
 }
 
-function renderResolved(
+async function renderResolved(
   page: Page,
   data: PageData,
   folders: PageFolder[],
   pages: Page[],
   outputKey: string,
   ctx: LocaleContext,
-): ResolvedPage | null {
+): Promise<ResolvedPage | null> {
   if (!data.pageLayers?.layers) return null
   const layers = data.pageLayers.layers
   const bodyHtml = renderPageBody(layers, {
@@ -188,10 +188,10 @@ function renderResolved(
   const shouldResolvePlaceholders =
     page.is_dynamic && data.collectionItem && (data.collectionFields?.length ?? 0) > 0
   const pageCustomCodeHead = shouldResolvePlaceholders
-    ? resolveCustomCodePlaceholders(rawHead, data.collectionItem!, data.collectionFields!)
+    ? await resolveCustomCodePlaceholders(rawHead, data.collectionItem!, data.collectionFields!, true)
     : rawHead
   const pageCustomCodeBody = shouldResolvePlaceholders
-    ? resolveCustomCodePlaceholders(rawBody, data.collectionItem!, data.collectionFields!)
+    ? await resolveCustomCodePlaceholders(rawBody, data.collectionItem!, data.collectionFields!, true)
     : rawBody
 
   return {

@@ -625,6 +625,7 @@ export async function POST(
       limit,
       offset = 0,
       maxTotal,
+      baseOffset = 0,
       localeCode,
       collectionLayerClasses,
       collectionLayerTag,
@@ -666,6 +667,11 @@ export async function POST(
     );
 
     const pageOffset = Math.max(0, offset || 0);
+    // Leading records the collection's `offset` skips before pagination. The
+    // client's `offset` is relative to the post-offset window, so the real
+    // offset into the (capped) matching set is the sum. Applied after the
+    // `maxTotal` cap to mirror SSR (cap the pool, then skip the first N).
+    const baseOffsetNum = Math.max(0, isNaN(Number(baseOffset)) ? 0 : Number(baseOffset));
 
     // `maxTotal` (the collection's display limit when pagination is enabled)
     // caps the total just like SSR, so a client-side reconcile reports the same
@@ -674,17 +680,20 @@ export async function POST(
     const cappedTotal = typeof maxTotal === 'number' && maxTotal > 0
       ? Math.min(filteredTotal, maxTotal)
       : filteredTotal;
+    // The offset skips leading records, so the paginated total excludes them.
+    const displayTotal = Math.max(0, cappedTotal - baseOffsetNum);
+    const effectiveOffset = baseOffsetNum + pageOffset;
 
-    if (matchingIds.length === 0 || pageOffset >= cappedTotal) {
+    if (matchingIds.length === 0 || pageOffset >= displayTotal) {
       return noCache({
-        data: { html: '', total: cappedTotal, count: 0, offset: pageOffset, hasMore: false, itemIds: [] },
+        data: { html: '', total: displayTotal, count: 0, offset: pageOffset, hasMore: false, itemIds: [] },
       });
     }
 
     // Never serve items past the cap: shrink the page window to what's left
-    // below `cappedTotal`.
-    const requestedLimit = limit && limit > 0 ? limit : cappedTotal;
-    const pageLimit = Math.min(requestedLimit, cappedTotal - pageOffset);
+    // below `displayTotal`.
+    const requestedLimit = limit && limit > 0 ? limit : displayTotal;
+    const pageLimit = Math.min(requestedLimit, displayTotal - pageOffset);
     let pageRawItems: CollectionItem[] = [];
     let pageItemIds: string[] = [];
 
@@ -693,13 +702,13 @@ export async function POST(
       const { items } = await getItemsByCollectionId(collectionId, isPublished, {
         itemIds: matchingIds,
         limit: pageLimit,
-        offset: pageOffset,
+        offset: effectiveOffset,
       });
       pageRawItems = items;
       pageItemIds = items.map(item => item.id);
     } else if (sortBy === 'random') {
       const randomizedIds = [...matchingIds].sort(() => Math.random() - 0.5);
-      pageItemIds = randomizedIds.slice(pageOffset, pageOffset + pageLimit);
+      pageItemIds = randomizedIds.slice(effectiveOffset, effectiveOffset + pageLimit);
       if (pageItemIds.length > 0) {
         const { items } = await getItemsByCollectionId(collectionId, isPublished, {
           itemIds: pageItemIds,
@@ -722,7 +731,7 @@ export async function POST(
           ? bStr.localeCompare(aStr)
           : aStr.localeCompare(bStr);
       });
-      pageItemIds = sortedIds.slice(pageOffset, pageOffset + pageLimit);
+      pageItemIds = sortedIds.slice(effectiveOffset, effectiveOffset + pageLimit);
       if (pageItemIds.length > 0) {
         const { items } = await getItemsByCollectionId(collectionId, isPublished, {
           itemIds: pageItemIds,
@@ -744,7 +753,7 @@ export async function POST(
     // render the live number in the filtered HTML.
     await enrichItemsWithCountValues(paginatedItems, collectionId, isPublished);
 
-    const hasMore = pageOffset + paginatedItems.length < cappedTotal;
+    const hasMore = pageOffset + paginatedItems.length < displayTotal;
 
     const [collectionFields, pages, folders, localeData] = await metadataPromise;
 
@@ -788,7 +797,7 @@ export async function POST(
     return noCache({
       data: {
         html,
-        total: cappedTotal,
+        total: displayTotal,
         count: paginatedItems.length,
         offset: pageOffset,
         hasMore,

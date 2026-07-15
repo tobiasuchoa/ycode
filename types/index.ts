@@ -519,6 +519,10 @@ export interface Layer {
     // Mirrors `CollectionPaginationMeta.maxTotal` so client-side filtering shows
     // the same clamped count/`hasMore` as SSR instead of the raw filtered total.
     maxTotal?: number;
+    // The collection's configured `offset` — leading records skipped before
+    // paginating. Forwarded to the filter API so client-side filtered paging
+    // composes offset with pagination the same way SSR does.
+    baseOffset?: number;
     paginationMode?: 'pages' | 'load_more';
     layerTemplate: Layer[];
     collectionLayerClasses?: string[];
@@ -1510,6 +1514,10 @@ export interface CollectionPaginationMeta {
   // Treated as a max total: clamps `totalItems` and stops `load_more` once
   // reached, even if the underlying collection has more matching rows.
   maxTotal?: number;
+  // The collection's configured `offset` — number of leading records to skip
+  // BEFORE paginating. `totalItems` already excludes these, and the client
+  // (load_more) must forward it so continued paging stays past the offset.
+  baseOffset?: number;
 }
 
 // Conditional Visibility Types

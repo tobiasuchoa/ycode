@@ -7,7 +7,7 @@
 
 import type { CollectionField, InlineVariable } from '@/types';
 import { isDateFieldType } from '@/lib/collection-field-utils';
-import { formatDateInTimezone } from '@/lib/date-format-utils';
+import { formatDateInTimezone, formatDateOnly } from '@/lib/date-format-utils';
 import { extractPlainTextFromTiptap } from '@/lib/tiptap-utils';
 import { formatDateWithPreset, formatNumberWithPreset } from '@/lib/variable-format-utils';
 import { PAGINATION_VARIABLE_LABELS } from '@/lib/pagination-text-utils';
@@ -48,6 +48,11 @@ export function formatFieldValue(
   if (isDateFieldType(fieldType) && typeof value === 'string') {
     if (format) {
       return formatDateWithPreset(value, format, timezone);
+    }
+    // date_only values are timezone-neutral calendar dates: format without
+    // timezone conversion so the day never shifts.
+    if (fieldType === 'date_only') {
+      return formatDateOnly(value);
     }
     return formatDateInTimezone(value, timezone, 'display');
   }

@@ -11,6 +11,35 @@ import { getStyleIds, resolveLayerClasses } from '@/lib/layer-style-resolve';
 export { getStyleIds } from '@/lib/layer-style-resolve';
 
 /**
+ * Re-derive a layer's structured design from its flattened classes while
+ * preserving the background gradient/image CSS vars.
+ *
+ * `bgGradientVars` / `bgImageVars` hold the actual gradient strings and image
+ * URLs keyed by breakpoint+state. They live in `design.backgrounds` but are NOT
+ * encoded in any Tailwind class (the class only references `var(--bg-img)`), so
+ * `buildDesign` — which derives design purely from classes — can't recover them.
+ * Every place that re-flattens a styled layer must carry them across, otherwise
+ * an applied gradient/image silently disappears (e.g. the layer keeps the
+ * `bg-[image:var(--bg-img)]` class but loses the value at publish time).
+ */
+function buildDesignPreservingBgVars(classes: string, source: Pick<Layer, 'design'>): Layer['design'] {
+  const design = buildDesign(classes);
+  const bg = source.design?.backgrounds;
+  if (!design || !bg) return design;
+  const grad = bg.bgGradientVars && Object.keys(bg.bgGradientVars).length > 0 ? bg.bgGradientVars : undefined;
+  const img = bg.bgImageVars && Object.keys(bg.bgImageVars).length > 0 ? bg.bgImageVars : undefined;
+  if (!grad && !img) return design;
+  return {
+    ...design,
+    backgrounds: {
+      ...design.backgrounds,
+      ...(grad ? { bgGradientVars: grad } : {}),
+      ...(img ? { bgImageVars: img } : {}),
+    },
+  };
+}
+
+/**
  * Apply a style to a layer
  * Replaces the layer's style stack with this single style and its values.
  * Clears any previous style overrides.
@@ -64,7 +93,7 @@ export function setLayerStyleStack(
 
   const classes = resolveLayerClasses(next, stylesById);
   next.classes = classes;
-  next.design = buildDesign(classes);
+  next.design = buildDesignPreservingBgVars(classes, layer);
   return next;
 }
 
@@ -226,7 +255,7 @@ export function updateLayersWithStyle(
     const ids = getStyleIds(layer);
     if (ids.includes(changedStyleId) && !layer.styleOverrides) {
       const classes = resolveLayerClasses(layer, stylesById);
-      updatedLayer = { ...updatedLayer, classes, design: buildDesign(classes) };
+      updatedLayer = { ...updatedLayer, classes, design: buildDesignPreservingBgVars(classes, layer) };
     }
 
     // Update textStyles entries that reference this style (single-style only)
@@ -291,7 +320,7 @@ export function detachStyleFromLayers(
         if (stylesById && !layer.styleOverrides) {
           const classes = resolveLayerClasses(next, stylesById);
           next.classes = classes;
-          next.design = buildDesign(classes);
+          next.design = buildDesignPreservingBgVars(classes, layer);
         }
         updatedLayer = next;
       }

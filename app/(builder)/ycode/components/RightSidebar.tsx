@@ -62,6 +62,7 @@ import RichTextEditor from './RichTextEditor';
 import ComponentVariableLabel, { VARIABLE_TYPE_ICONS } from './ComponentVariableLabel';
 import InteractionsPanel from './InteractionsPanel';
 import LayoutControls from './LayoutControls';
+import SelfLayoutControls from './SelfLayoutControls';
 import LayerStylesPanel from './LayerStylesPanel';
 import PositionControls from './PositionControls';
 import TransformControls from './TransformControls';
@@ -108,7 +109,7 @@ import { buildFieldGroupsForLayer, getFieldIcon, hasBoundCollectionSource, isMul
 import { getInverseReferenceFields } from '@/lib/collection-utils';
 
 // 7. Types
-import type { Layer, FieldVariable, CollectionField, CollectionVariable, ComponentVariable } from '@/types';
+import type { Layer, FieldVariable, CollectionField, CollectionVariable, ComponentVariable, BackgroundsDesign } from '@/types';
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
 import {
   DropdownMenu,
@@ -138,6 +139,27 @@ function pruneTextDescendants(children: Layer[] | undefined): Layer[] {
   return children
     .filter(c => !isTextContentLayer(c))
     .map(c => (c.children?.length ? { ...c, children: pruneTextDescendants(c.children) } : c));
+}
+
+/** The non-empty gradient/image CSS var maps from a backgrounds design object. */
+type BgVars = Pick<BackgroundsDesign, 'bgGradientVars' | 'bgImageVars'>;
+
+/**
+ * Extract the background gradient/image CSS var maps from a backgrounds design.
+ *
+ * These live in `design.backgrounds.bgGradientVars` / `bgImageVars` and hold the
+ * actual gradient/image values keyed by breakpoint+state. They are NOT encoded
+ * in Tailwind classes (the class only references `var(--bg-img)`), so any code
+ * that regenerates design from classes via `buildDesign` would drop them. The
+ * layer-style system round-trips through classes, so these vars must be carried
+ * through explicitly. Returns undefined when neither map has entries.
+ */
+function extractBgVars(bg: BackgroundsDesign | undefined): BgVars | undefined {
+  if (!bg) return undefined;
+  const out: BgVars = {};
+  if (bg.bgGradientVars && Object.keys(bg.bgGradientVars).length > 0) out.bgGradientVars = bg.bgGradientVars;
+  if (bg.bgImageVars && Object.keys(bg.bgImageVars).length > 0) out.bgImageVars = bg.bgImageVars;
+  return out.bgGradientVars || out.bgImageVars ? out : undefined;
 }
 
 const RightSidebar = React.memo(function RightSidebar({
@@ -359,6 +381,14 @@ const RightSidebar = React.memo(function RightSidebar({
     if (!selectedLayerId) return false;
     const result = indexedFindLayerWithParent(layerIndexes, selectedLayerId);
     return result?.parent === null;
+  }, [selectedLayerId, layerIndexes]);
+
+  // Parent of the selected layer - drives the align-self control (its axis and
+  // visibility depend on the parent's flex/grid layout, not the layer's own)
+  const selectedLayerParent: Layer | null = useMemo(() => {
+    if (!selectedLayerId) return null;
+    const result = indexedFindLayerWithParent(layerIndexes, selectedLayerId);
+    return result?.parent ?? null;
   }, [selectedLayerId, layerIndexes]);
 
   // Check if selected collection is nested inside another collection
@@ -785,13 +815,21 @@ const RightSidebar = React.memo(function RightSidebar({
     if (!activeLayerStyleId) return selectedLayer;
     const cls = activeChipClassTokens.join(' ');
     const { styleId: _s, styleIds: _ss, styleOverrides: _so, styleOverridesByStyle: _sm, ...rest } = selectedLayer;
-    return { ...rest, classes: cls, design: buildDesign(cls) };
+    const design = buildDesign(cls);
+    // Background gradient/image vars can't be reconstructed from classes, so carry
+    // the layer's own vars onto the proxy — otherwise the panel wouldn't show an
+    // applied gradient and the background handlers would misread the current state.
+    const bgVars = extractBgVars(selectedLayer.design?.backgrounds);
+    if (bgVars && design) {
+      design.backgrounds = { ...design.backgrounds, ...bgVars };
+    }
+    return { ...rest, classes: cls, design };
   }, [selectedLayer, activeLayerStyleId, activeChipClassTokens]);
 
   // Store an edited class string as the active chip's override (or clear it when
   // it matches the shared style again), then re-flatten the whole stack so the
   // canvas renders the resolved cascade. Only THIS layer changes.
-  const applyChipClasses = useCallback((chipId: string, newClassesStr: string) => {
+  const applyChipClasses = useCallback((chipId: string, newClassesStr: string, bgVars?: BgVars) => {
     if (!selectedLayer) return;
     const map: NonNullable<Layer['styleOverridesByStyle']> = { ...(selectedLayer.styleOverridesByStyle ?? {}) };
     const styleTokens = (stylesById.get(chipId)?.classes ?? '').split(' ').filter(Boolean).sort().join(' ');
@@ -809,11 +847,20 @@ const RightSidebar = React.memo(function RightSidebar({
       styleOverridesByStyle: hasMap ? map : undefined,
     };
     const resolved = resolveLayerClasses(probe, stylesById);
+    const design = buildDesign(resolved);
+    // Reapply the background gradient/image vars, which `buildDesign` can't recover
+    // from classes. When the caller supplies `bgVars` (a background edit) it is
+    // authoritative — including removals; otherwise preserve the layer's existing
+    // vars so unrelated edits don't wipe an applied gradient/image.
+    const effectiveBgVars = bgVars !== undefined ? bgVars : extractBgVars(selectedLayer.design?.backgrounds);
+    if (design && effectiveBgVars && (effectiveBgVars.bgGradientVars || effectiveBgVars.bgImageVars)) {
+      design.backgrounds = { ...design.backgrounds, ...effectiveBgVars };
+    }
     handleLayerUpdate(selectedLayer.id, {
       styleOverridesByStyle: hasMap ? map : undefined,
       styleOverrides: undefined,
       classes: resolved,
-      design: buildDesign(resolved),
+      design,
     });
   }, [selectedLayer, appliedStyleIds, stylesById, handleLayerUpdate]);
 
@@ -826,10 +873,15 @@ const RightSidebar = React.memo(function RightSidebar({
       handleLayerUpdate(layerId, updates);
       return;
     }
-    const { classes, design: _design, styleOverrides: _so, ...rest } = updates;
+    const { classes, design, styleOverrides: _so, ...rest } = updates;
     if (Object.keys(rest).length > 0) handleLayerUpdate(layerId, rest);
     const str = Array.isArray(classes) ? classes.join(' ') : classes;
-    applyChipClasses(chip, str);
+    // Route background gradient/image vars from the derived design through to the
+    // chip write — they aren't in `classes`, so dropping the design here would
+    // silently discard an applied gradient/image. When design is present it is
+    // authoritative (an empty result removes the vars).
+    const bgVars = design !== undefined ? (extractBgVars(design.backgrounds) ?? {}) : undefined;
+    applyChipClasses(chip, str, bgVars);
   }, [handleLayerUpdate, applyChipClasses]);
 
   // Classes section sources. With a style stack, the panel is chip-scoped: it
@@ -1975,6 +2027,13 @@ const RightSidebar = React.memo(function RightSidebar({
 
           {shouldShowControl('layout', selectedLayer) && !showTextStyleControls && (
             <LayoutControls layer={controlLayer} onLayerUpdate={controlUpdate} />
+          )}
+
+          {!showTextStyleControls && (
+            <SelfLayoutControls
+              layer={controlLayer} parentLayer={selectedLayerParent}
+              onLayerUpdate={controlUpdate}
+            />
           )}
 
           {shouldShowControl('spacing', selectedLayer) && (

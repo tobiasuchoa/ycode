@@ -562,11 +562,11 @@ export default async function PageRenderer({
   const rawPageCustomCodeBody = page.settings?.custom_code?.body || '';
 
   const pageCustomCodeHead = page.is_dynamic && collectionItem
-    ? resolveCustomCodePlaceholders(rawPageCustomCodeHead, collectionItem, collectionFields)
+    ? await resolveCustomCodePlaceholders(rawPageCustomCodeHead, collectionItem, collectionFields, usePublishedData)
     : rawPageCustomCodeHead;
 
   const pageCustomCodeBody = page.is_dynamic && collectionItem
-    ? resolveCustomCodePlaceholders(rawPageCustomCodeBody, collectionItem, collectionFields)
+    ? await resolveCustomCodePlaceholders(rawPageCustomCodeBody, collectionItem, collectionFields, usePublishedData)
     : rawPageCustomCodeBody;
 
   const { bodyClasses, childLayers: rawChildLayers } = extractBodyLayer(resolvedLayers);

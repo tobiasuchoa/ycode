@@ -426,7 +426,10 @@ export const useCollectionLayerStore = create<CollectionLayerStore>((set, get) =
     }));
 
     try {
-      const offset = (page - 1) * meta.itemsPerPage;
+      // The collection's base offset skips leading records before pagination,
+      // so fold it into the page offset and exclude it from the displayed total.
+      const baseOffset = meta.baseOffset ?? 0;
+      const offset = baseOffset + (page - 1) * meta.itemsPerPage;
 
       const response = await collectionsApi.getItems(config.collectionId, {
         sortBy: config.sortBy,
@@ -440,7 +443,7 @@ export const useCollectionLayerStore = create<CollectionLayerStore>((set, get) =
       }
 
       const items = response.data?.items || [];
-      const total = response.data?.total || 0;
+      const total = Math.max(0, (response.data?.total || 0) - baseOffset);
 
       // Build new pagination meta
       const newMeta: CollectionPaginationMeta = {

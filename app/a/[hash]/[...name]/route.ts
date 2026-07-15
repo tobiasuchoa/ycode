@@ -96,7 +96,10 @@ export async function GET(
     }
 
     const transform = parseTransformParams(url.searchParams);
-    const canResize = transform && isImage;
+    // Never run Sharp on GIFs — it flattens animated frames into a single
+    // static image, killing the animation. Serve the raw bytes instead.
+    const isGif = asset.mime_type === 'image/gif';
+    const canResize = transform && isImage && !isGif;
 
     if (canResize) {
       const buffer = Buffer.from(await response.arrayBuffer());

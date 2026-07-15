@@ -11,9 +11,10 @@ export const revalidate = 0;
  * supported response types, grant types, and PKCE methods. MCP clients
  * (Claude.ai web, ChatGPT) fetch this to discover the OAuth flow.
  *
- * `client_id_metadata_document_supported: true` is advertised so clients
- * may eventually skip DCR by hosting a client metadata document, but for
- * now DCR via /register is the only registration mechanism we accept.
+ * We deliberately do NOT advertise `client_id_metadata_document_supported`:
+ * only DCR via /register is implemented. Advertising CIMD makes clients like
+ * Claude send a URL as the client_id instead of registering, which then fails
+ * the /authorize lookup with "Unknown client".
  */
 export async function GET(request: NextRequest) {
   const baseUrl = getBaseUrl(request);
@@ -28,7 +29,6 @@ export async function GET(request: NextRequest) {
     code_challenge_methods_supported: ['S256'],
     token_endpoint_auth_methods_supported: ['none'],
     scopes_supported: ['mcp'],
-    client_id_metadata_document_supported: true,
   });
 }
 

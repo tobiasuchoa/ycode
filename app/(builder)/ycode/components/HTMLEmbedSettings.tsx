@@ -8,7 +8,7 @@
 
 import React, { useState, useCallback } from 'react';
 
-import { Textarea } from '@/components/ui/textarea';
+import { CodeEditor } from '@/components/ui/code-editor';
 import SettingsPanel from './SettingsPanel';
 import type { Layer } from '@/types';
 
@@ -48,12 +48,11 @@ export default function HTMLEmbedSettings({ layer, onLayerUpdate }: HTMLEmbedSet
       onToggle={() => setIsOpen(!isOpen)}
     >
       <div className="flex flex-col gap-3">
-        <Textarea
+        <CodeEditor
           value={currentCode}
-          onChange={(e) => handleCodeChange(e.target.value)}
+          onValueChange={handleCodeChange}
           placeholder="<div>Add your custom code here</div>"
-          className="font-mono text-xs min-h-[200px] max-h-[20vh] overflow-y-auto resize-none"
-          spellCheck={false}
+          className="min-h-50 max-h-[20vh]"
         />
       </div>
     </SettingsPanel>

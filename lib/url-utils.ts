@@ -30,3 +30,13 @@ export function buildAbsolutePageUrl(baseUrl: string, pagePath: string): string 
   }
   return `${base}${pagePath.startsWith('/') ? pagePath : '/' + pagePath}`;
 }
+
+/**
+ * Prefix a relative URL (e.g. asset proxy path `/a/...`) with the site base URL.
+ * Leaves already-absolute or non-root URLs (http, data:, etc.) untouched, and
+ * returns the URL as-is when no base URL is available.
+ */
+export function buildAbsoluteAssetUrl(baseUrl: string | null, url: string | null): string | null {
+  if (!url || !baseUrl || !url.startsWith('/')) return url;
+  return `${baseUrl.replace(/\/$/, '')}${url}`;
+}

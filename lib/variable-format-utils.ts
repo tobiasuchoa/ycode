@@ -6,7 +6,7 @@
  */
 
 import type { CollectionFieldType } from '@/types';
-import { isDateFieldType } from '@/lib/collection-field-utils';
+import { isDateFieldType, isDateOnlyString } from '@/lib/collection-field-utils';
 
 // ─── Date Format Presets ────────────────────────────────────────────
 
@@ -406,10 +406,15 @@ export function formatDateWithPreset(
   const dateObj = typeof value === 'string' ? new Date(value) : value;
   if (isNaN(dateObj.getTime())) return '';
 
+  // date_only values are timezone-neutral calendar dates (`YYYY-MM-DD` parses as
+  // UTC midnight). Formatting them in the project timezone would shift the day, so
+  // pin the display timezone to UTC to preserve the stored calendar date.
+  const effectiveTimezone = typeof value === 'string' && isDateOnlyString(value) ? 'UTC' : timezone;
+
   const preset = presetId ? datePresetMap.get(presetId) : datePresetMap.get('date-long');
   if (!preset) {
     return new Intl.DateTimeFormat('en-US', {
-      timeZone: timezone,
+      timeZone: effectiveTimezone,
       month: 'long',
       day: 'numeric',
       year: 'numeric',
@@ -418,7 +423,7 @@ export function formatDateWithPreset(
 
   try {
     const formatter = new Intl.DateTimeFormat(preset.locale || 'en-US', {
-      timeZone: timezone,
+      timeZone: effectiveTimezone,
       ...preset.options,
     });
     const result = preset.extractPart

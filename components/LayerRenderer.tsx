@@ -265,6 +265,7 @@ const LayerRenderer: React.FC<LayerRendererProps> = ({
               sortOrderInputLayerId={layer._filterConfig!.sortOrderInputLayerId}
               limit={layer._filterConfig!.limit}
               maxTotal={layer._filterConfig!.maxTotal}
+              baseOffset={layer._filterConfig!.baseOffset}
               paginationMode={layer._filterConfig!.paginationMode}
               layerTemplate={layer._filterConfig!.layerTemplate}
               collectionLayerClasses={layer._filterConfig!.collectionLayerClasses}
@@ -1550,7 +1551,11 @@ const LayerItemImpl: React.FC<{
 
     if (isPaginated) {
       const itemsPerPage = pagination!.items_per_page || 10;
-      items = items.slice(0, itemsPerPage);
+      // Offset composes with pagination: skip the first N records, then show
+      // the first page. The fetch below over-fetches by `offset` for the plain
+      // (non-filtered) case so these leading records are present to skip.
+      const offset = collectionVariable?.offset && collectionVariable.offset > 0 ? collectionVariable.offset : 0;
+      items = items.slice(offset, offset + itemsPerPage);
     } else if (hasStaticFilters || sourceFieldType === 'multi_asset') {
       const offset = collectionVariable?.offset ?? 0;
       const limit = collectionVariable?.limit;
@@ -1643,7 +1648,10 @@ const LayerItemImpl: React.FC<{
       fetchLimit = FILTERED_FETCH_LIMIT;
       fetchOffset = 0;
     } else if (isPaginated) {
-      fetchLimit = pagination!.items_per_page || 10;
+      // Over-fetch by the base offset so the memo can skip the leading records
+      // client-side and still fill the first page (mirrors SSR's offset+page).
+      const baseOffset = collectionVariable.offset && collectionVariable.offset > 0 ? collectionVariable.offset : 0;
+      fetchLimit = (pagination!.items_per_page || 10) + baseOffset;
       fetchOffset = 0;
     } else {
       fetchLimit = collectionVariable.limit;

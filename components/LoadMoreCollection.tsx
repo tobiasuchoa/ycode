@@ -45,7 +45,7 @@ export default function LoadMoreCollection({
   pageCollectionSortedItemIds,
   collectionLayer,
 }: LoadMoreCollectionProps) {
-  const { totalItems, itemsPerPage, collectionId, isPublished, sortBy, sortOrder, maxTotal } = paginationMeta;
+  const { totalItems, itemsPerPage, collectionId, isPublished, sortBy, sortOrder, maxTotal, baseOffset } = paginationMeta;
   const markerRef = useRef<HTMLSpanElement>(null);
 
   const [loadedCount, setLoadedCount] = useState(itemsPerPage);
@@ -82,6 +82,7 @@ export default function LoadMoreCollection({
             pageCollectionSortedItemIds,
             collectionLayer,
             maxTotal,
+            baseOffset,
           }),
         }
       );
@@ -152,6 +153,7 @@ export default function LoadMoreCollection({
     pageCollectionSortedItemIds,
     collectionLayer,
     maxTotal,
+    baseOffset,
   ]);
 
   useEffect(() => {

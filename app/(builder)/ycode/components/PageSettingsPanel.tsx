@@ -9,7 +9,7 @@
 import React, { useState, useEffect, useMemo, useRef, useImperativeHandle, useCallback } from 'react';
 import Image from 'next/image';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
-import type { Page, PageSettings, Asset, FieldVariable } from '@/types';
+import type { Page, PageSettings, Asset, FieldVariable, CollectionField } from '@/types';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -32,7 +32,12 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select';
-import * as SelectPrimitive from '@radix-ui/react-select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu';
+import { CollectionFieldSelector } from './CollectionFieldSelector';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Spinner } from '@/components/ui/spinner';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -42,12 +47,13 @@ import Icon from '@/components/ui/icon';
 import { getPageIcon, isHomepage, buildSlugPath, buildFolderPath, folderHasIndexPage, generateUniqueSlug, generateSlug, sanitizeSlug, isReservedRootSlug } from '@/lib/page-utils';
 import { isAssetOfType, ASSET_CATEGORIES } from '@/lib/asset-utils';
 import { Textarea } from '@/components/ui/textarea';
+import { CodeEditor } from '@/components/ui/code-editor';
 import { useAsset } from '@/hooks/use-asset';
 import { useEditorStore } from '@/stores/useEditorStore';
 import RichTextEditor from './RichTextEditor';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
-import { getFieldIcon, IMAGE_FIELD_TYPES, RICH_TEXT_FIELD_TYPES } from '@/lib/collection-field-utils';
+import { getFieldIcon, IMAGE_FIELD_TYPES, RICH_TEXT_FIELD_TYPES, DISPLAYABLE_FIELD_TYPES, type FieldGroup as CollectionFieldGroup } from '@/lib/collection-field-utils';
 
 export interface PageSettingsPanelHandle {
   checkUnsavedChanges: () => Promise<boolean>;
@@ -130,8 +136,6 @@ const PageSettingsPanel = React.forwardRef<PageSettingsPanelHandle, PageSettings
 
   const [customCodeHead, setCustomCodeHead] = useState('');
   const [customCodeBody, setCustomCodeBody] = useState('');
-  const [headVariableSelectKey, setHeadVariableSelectKey] = useState(0);
-  const [bodyVariableSelectKey, setBodyVariableSelectKey] = useState(0);
   const customCodeHeadRef = useRef<HTMLTextAreaElement | null>(null);
   const customCodeBodyRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -294,6 +298,30 @@ const PageSettingsPanel = React.forwardRef<PageSettingsPanelHandle, PageSettings
     return collectionFields.map(field => `{{${field.name}}}`).join(', ');
   }, [collectionFields]);
 
+  // Field group feeding the variable selector (reference fields expand into submenus)
+  const customCodeFieldGroups = useMemo<CollectionFieldGroup[]>(() => {
+    if (collectionFields.length === 0) return [];
+    return [{ fields: collectionFields }];
+  }, [collectionFields]);
+
+  // Build a {{Field}} / {{Reference.Field}} token from a selected field + relationship path (field IDs)
+  const buildFieldTokenPath = useCallback((fieldId: string, relationshipPath: string[]): string | null => {
+    let currentField: CollectionField | undefined = collectionFields.find(field => field.id === fieldId);
+    if (!currentField) return null;
+
+    const names = [currentField.name];
+    for (const relationshipFieldId of relationshipPath) {
+      const referencedCollectionId: string | null = currentField.reference_collection_id;
+      if (!referencedCollectionId) return null;
+      const nextField: CollectionField | undefined = (fields[referencedCollectionId] || []).find(field => field.id === relationshipFieldId);
+      if (!nextField) return null;
+      names.push(nextField.name);
+      currentField = nextField;
+    }
+
+    return names.join('.');
+  }, [collectionFields, fields]);
+
   // Helper function to insert text at cursor position in textarea
   const insertTextAtCursor = useCallback((textarea: HTMLTextAreaElement | null, text: string, setValue: (value: string) => void, currentValue: string) => {
     if (!textarea) return;
@@ -323,26 +351,16 @@ const PageSettingsPanel = React.forwardRef<PageSettingsPanelHandle, PageSettings
     textareaRef,
     value,
     setValue,
-    selectKey,
-    setSelectKey,
   }: {
     textareaRef: React.RefObject<HTMLTextAreaElement | null>;
     value: string;
     setValue: (value: string) => void;
-    selectKey: number;
-    setSelectKey: (updater: (prev: number) => number) => void;
   }) => {
     if (!isDynamicPage || collectionFields.length === 0) return null;
 
     return (
-      <Select
-        key={selectKey}
-        onValueChange={(fieldName) => {
-          handleFieldVariableInsert(fieldName, textareaRef, setValue, value);
-          setSelectKey(prev => prev + 1);
-        }}
-      >
-        <SelectPrimitive.Trigger asChild>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
           <Button
             variant="secondary"
             size="sm"
@@ -350,17 +368,24 @@ const PageSettingsPanel = React.forwardRef<PageSettingsPanelHandle, PageSettings
           >
             <Icon name="database" className="size-2.5" />
           </Button>
-        </SelectPrimitive.Trigger>
-        <SelectContent>
-          {collectionFields.map((field) => (
-            <SelectItem key={field.id} value={field.name}>
-              {field.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-56 max-h-none!">
+          <CollectionFieldSelector
+            fieldGroups={customCodeFieldGroups}
+            allFields={fields}
+            collections={collections}
+            allowedTypes={DISPLAYABLE_FIELD_TYPES}
+            onSelect={(fieldId, relationshipPath) => {
+              const tokenPath = buildFieldTokenPath(fieldId, relationshipPath);
+              if (tokenPath) {
+                handleFieldVariableInsert(tokenPath, textareaRef, setValue, value);
+              }
+            }}
+          />
+        </DropdownMenuContent>
+      </DropdownMenu>
     );
-  }, [isDynamicPage, collectionFields, handleFieldVariableInsert]);
+  }, [isDynamicPage, collectionFields, customCodeFieldGroups, fields, collections, buildFieldTokenPath, handleFieldVariableInsert]);
 
   // Check if there's a URL conflict warning: dynamic page + non-index pages in same folder
   const urlConflictWarning = useMemo(() => {
@@ -1855,7 +1880,7 @@ const PageSettingsPanel = React.forwardRef<PageSettingsPanelHandle, PageSettings
                           <span>
                             The page CMS item values can be added to your custom codes (for example to improve SEO with JSON-LD) by adding
                             field names like <span className="text-foreground">{'{{Name}}'}</span>, which will be replaced with the value
-                            of the <span className="text-foreground">Name</span> field on each generated page.
+                            of the <span className="text-foreground">Name</span> field on each generated page. Image and file fields resolve to their URL.
                           </span>
                         </FieldDescription>
                       </Field>
@@ -1867,10 +1892,10 @@ const PageSettingsPanel = React.forwardRef<PageSettingsPanelHandle, PageSettings
                         Add custom code to the &lt;head&gt; section of the page. It can be useful when you want to add custom meta tags, analytics, or custom CSS.
                       </FieldDescription>
                       <div className="relative">
-                        <Textarea
-                          ref={(el) => { customCodeHeadRef.current = el; }}
+                        <CodeEditor
+                          textareaRef={customCodeHeadRef}
                           value={customCodeHead}
-                          onChange={(e) => setCustomCodeHead(e.target.value)}
+                          onValueChange={setCustomCodeHead}
                           placeholder="<script>...</script>"
                           className="min-h-48 w-full"
                         />
@@ -1881,8 +1906,6 @@ const PageSettingsPanel = React.forwardRef<PageSettingsPanelHandle, PageSettings
                                 textareaRef: customCodeHeadRef,
                                 value: customCodeHead,
                                 setValue: setCustomCodeHead,
-                                selectKey: headVariableSelectKey,
-                                setSelectKey: setHeadVariableSelectKey,
                               })}
                             </div>
                           </div>
@@ -1896,10 +1919,10 @@ const PageSettingsPanel = React.forwardRef<PageSettingsPanelHandle, PageSettings
                         Add custom code before the closing &lt;/body&gt; tag. It can be useful when you want to add custom scripts that need to run after the page loads.
                       </FieldDescription>
                       <div className="relative">
-                        <Textarea
-                          ref={(el) => { customCodeBodyRef.current = el; }}
+                        <CodeEditor
+                          textareaRef={customCodeBodyRef}
                           value={customCodeBody}
-                          onChange={(e) => setCustomCodeBody(e.target.value)}
+                          onValueChange={setCustomCodeBody}
                           placeholder="<script>...</script>"
                           className="min-h-48 w-full"
                         />
@@ -1911,8 +1934,6 @@ const PageSettingsPanel = React.forwardRef<PageSettingsPanelHandle, PageSettings
                                 textareaRef: customCodeBodyRef,
                                 value: customCodeBody,
                                 setValue: setCustomCodeBody,
-                                selectKey: bodyVariableSelectKey,
-                                setSelectKey: setBodyVariableSelectKey,
                               })}
                             </div>
                           </div>

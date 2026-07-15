@@ -177,8 +177,8 @@ export async function getAllAssets(folderId?: string | null): Promise<Asset[]> {
  * @param id Asset ID
  * @param isPublished If true, get published version; if false, get draft version (default: false)
  */
-export async function getAssetById(id: string, isPublished: boolean = false): Promise<Asset | null> {
-  const client = await getSupabaseAdmin();
+export async function getAssetById(id: string, isPublished: boolean = false, tenantId?: string): Promise<Asset | null> {
+  const client = await getSupabaseAdmin(tenantId);
 
   if (!client) {
     throw new Error('Supabase not configured');

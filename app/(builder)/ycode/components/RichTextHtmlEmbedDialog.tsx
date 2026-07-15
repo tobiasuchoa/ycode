@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
+import { CodeEditor } from '@/components/ui/code-editor';
 import {
   Dialog,
   DialogContent,
@@ -43,12 +43,11 @@ export default function RichTextHtmlEmbedDialog({
         <DialogHeader>
           <DialogTitle className="text-base">Edit HTML Embed</DialogTitle>
         </DialogHeader>
-        <Textarea
+        <CodeEditor
           value={localCode}
-          onChange={(e) => setLocalCode(e.target.value)}
+          onValueChange={setLocalCode}
           placeholder="<div>Add your custom HTML or <script> here</div>"
-          className="font-mono text-xs min-h-[200px] max-h-[40vh] overflow-y-auto resize-none"
-          spellCheck={false}
+          className="min-h-50 max-h-[40vh]"
         />
         <DialogFooter>
           <Button

@@ -415,7 +415,7 @@ function normalizeDesignValues(
       'space-evenly': 'evenly',
     };
 
-    for (const prop of ['justifyContent', 'alignItems', 'alignContent'] as const) {
+    for (const prop of ['justifyContent', 'alignItems', 'alignSelf', 'alignContent'] as const) {
       const val = layout[prop];
       if (typeof val === 'string' && flexValueMap[val]) {
         layout[prop] = flexValueMap[val];
