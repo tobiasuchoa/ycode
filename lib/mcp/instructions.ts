@@ -76,7 +76,10 @@ Each layer has:
 - Leaf elements (text, image, input, video, icon, hr, htmlEmbed) CANNOT have children
 - Sections cannot contain other sections
 - Links cannot nest inside links
-- Component instances are read-only (edit the master component instead)
+- Component instances are read-only IN PLACE: a page layer with a \`componentId\` is an instance of a
+  master component, so you cannot add/move/delete/style its inner layers through page/layer tools. This
+  does NOT mean component internals are unreachable — you edit them on the master via \`get_component\` +
+  \`update_component_layers\` (see Components below). Per-instance differences use variables/overrides.
 
 ### Design Properties
 
@@ -433,6 +436,18 @@ delete_redirect({ redirect_id: "..." })
 
 Components are reusable layer trees that can be instanced across pages.
 Each instance shares the same structure but can override specific content via **variables**.
+
+**Editing a component's internals (IMPORTANT — a common point of confusion):**
+A component's structure and design live on the **master component**, not on the instances placed on pages.
+When \`get_layers\` returns a layer with a \`componentId\`, that layer is an *instance* — its inner layers are
+read-only in place and won't appear as editable children in the page tree. Component internals are fully
+reachable and editable; you just target the master instead of the instance:
+\`\`\`
+get_component({ component_id: "<the layer's componentId>" })          // full internal layer tree + variables
+update_component_layers({ component_id: "...", operations: [...] })   // add / move / delete / style / link internals
+\`\`\`
+Edits to the master propagate to every instance. Use **variables** only for content that should differ per
+instance, and **variants** for whole alternate layer trees.
 
 **Creating a component:**
 1. Use \`create_component\` with a name and optional variables

@@ -69,6 +69,7 @@ const ELEMENTS_REFERENCE_JSON = JSON.stringify({
     section_cannot_contain_section: true,
     links_cannot_nest: true,
     component_instances_are_readonly: true,
+    component_instances_note: 'A page layer with a componentId is a component instance. Its inner layers are read-only in place. To edit a component\'s structure/design, target the master with get_component + update_component_layers; per-instance content uses variables/overrides.',
   },
   element_types: {
     structure: {
