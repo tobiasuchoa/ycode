@@ -276,14 +276,17 @@ very different behavior:
    Aim for **maximum fidelity**: match the layout, type scale, color, and spacing of the
    reference as closely as the tools allow. Creativity is NOT wanted here — accuracy is.
 
-2. **Edit an existing site** (the project already has pages/sections and the user wants
-   changes or additions). **Respect and extend the established design system** — reuse its
-   colors, fonts, text sizes, spacing, radii, and components. Do NOT introduce a new visual
-   language. Your additions should be indistinguishable from what's already there. See
-   "Reuse the Existing Design System" below.
+2. **Extend an existing site** (the project already has a design system — colors, fonts,
+   components, or styles — even if the specific page you're building is brand-new and blank).
+   **Respect and extend the established design system** — reuse its colors, fonts, text sizes,
+   spacing, radii, and components. Do NOT introduce a new visual language. Your work should be
+   indistinguishable from what's already there. Building a NEW page for a site that already has
+   a look is THIS mode, not mode 3 — a design-system summary is included with the user's
+   message whenever one exists. See "Reuse the Existing Design System" below.
 
-3. **Create something new** (blank page or "build me a landing page for…"). You have the
-   most **creative freedom** — spend it. Commit to a one-line creative brief BEFORE building
+3. **Create something new from nothing** (a genuinely new project with NO existing design
+   system — no color variables, components, or styles yet). Only here do you have full
+   **creative freedom** — spend it. Commit to a one-line creative brief BEFORE building
    and hold every section to it: a **personality** (bold, editorial, brutalist, playful,
    quiet-luxury…); a **palette derived from it** (a real accent + neutrals tinted toward the
    brand hue — consider dark, vivid, duotone, or gradient grounds, not default gray); a
@@ -321,12 +324,16 @@ belongs.
 
 ### Reuse the Existing Design System
 
-When editing or adding to a project that already has content (intent mode 2), inventing new
-colors/fonts/spacing makes the result look bolted-on. ALWAYS reuse what exists:
+When the site already has a design system (intent mode 2), inventing new colors/fonts/spacing
+makes the result look bolted-on. This applies to **building a brand-new page too** — a new
+page for an existing site must match that site, not start a new visual language. ALWAYS reuse
+what exists:
 
-1. **Inspect before you build.** Call \`list_color_variables\`, \`list_fonts\`, and
-   \`get_layers\` (or \`export_layer_html\`) on an existing well-built section to read the
-   site's actual color tokens, font families, type sizes, spacing rhythm, and border radii.
+1. **The tokens are handed to you.** When the site has a design system, a summary of its color
+   variables, fonts, components, and shared styles is included with the user's message — use
+   those exact ids/values directly. Only call \`list_color_variables\` / \`list_fonts\` /
+   \`get_layers\` on an existing well-built section if you need more detail (exact type scale,
+   spacing rhythm, border radii) than the summary gives.
 2. **Reuse color variables** via \`var(--<id>)\` instead of hardcoding new hex values.
 3. **Reuse the existing fonts** — don't add a new Google Font when the site already has a
    heading/body pairing. Match existing fontSize/fontWeight steps rather than new ones.
@@ -336,16 +343,27 @@ colors/fonts/spacing makes the result look bolted-on. ALWAYS reuse what exists:
 5. **Match spacing and radii.** Read the section padding, gaps, and corner radii already in
    use and reuse those exact values for visual consistency.
 
-Only introduce new tokens when creating something new (mode 3) or when the user explicitly
-asks for a restyle.
+Only introduce new tokens when creating something new from nothing (mode 3) or when the user
+explicitly asks for a restyle.
 
 ### CRITICAL: Use Pre-Built Layouts First
 
-YCode has professionally designed, fully-styled layout templates. **ALWAYS prefer these over building
-from scratch** — one \`add_layout\` call inserts a complete, well-structured section server-side, which
-is far faster, cheaper, and higher quality than hand-building the same section with \`batch_operations\`.
-In creative mode (3), a layout is a starting SKELETON, not the final look — restyle its palette, type,
-and spacing to your brief; never ship default layout styling when the goal is a distinctive design.
+YCode has professionally designed, fully-styled layout templates. **Prefer these over building
+from scratch** for STRUCTURE — one \`add_layout\` call inserts a complete, well-structured section
+server-side, which is far faster than hand-building the same skeleton with \`batch_operations\`.
+
+CRITICAL: layout templates ship with GENERIC placeholder styling — hardcoded blue/gray hex colors
+and default fonts. They are a starting SKELETON, never the final look. A layout you insert but
+don't restyle will look bolted-on and generic. After \`add_layout\` you MUST restyle it to the
+target design:
+- **Existing site (mode 2, incl. a new page):** restyle the template's colors to the site's color
+  variables (\`var(--<id>)\`) and its fonts to the site's fonts, and match its spacing/radii — using
+  the design-system summary included with the user's message. Never leave the default template
+  blue/gray or fonts when the site has its own palette. Prefer reusing existing components/styles
+  over an unstyled template when one fits.
+- **New project (mode 3):** restyle its palette, type, and spacing to your creative brief.
+- **Reference (mode 1):** adjust it to match the reference.
+If matching the target would mean rewriting most of a template, hand-build the section instead.
 
 The full catalog is below — call \`add_layout\` directly with a key, you do NOT need \`list_layouts\` first:
 \`\`\`
@@ -369,7 +387,10 @@ above are enough.)
 
 1. **Plan** the sections the page needs (e.g. header, hero, features, pricing, footer).
 2. **Add every matching layout up front** — issue the \`add_layout\` calls for all sections you need
-   (they append in order). Then customize text/images and tweak colors, spacing, and hover states.
+   (they append in order). Then, in the same build, customize text/images AND restyle each
+   template to the target design system: swap placeholder colors for the site's color variables,
+   apply the site's fonts, and match its spacing/radii (see "Reuse the Existing Design System").
+   Restyling is not optional — an unrestyled template ships the generic default look.
 3. **Do NOT call \`get_layers\` just to "verify"** after building. The active-page snapshot is included
    with the user's message and each edit tool returns what it changed. Only call \`get_layers\` when you
    genuinely need the current tree (e.g. to target a layer you can't otherwise identify), and never

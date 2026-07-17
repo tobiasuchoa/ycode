@@ -7,7 +7,10 @@ import { getAgentToolMap, getAgentTools } from '@/lib/agent/tools/registry';
 import { estimateCostUsd } from '@/lib/agent/models';
 import { getCachedLayers } from '@/lib/mcp/page-layers';
 import { generateCSSForPage } from '@/lib/server/cssGenerator';
-import { getComponentById } from '@/lib/repositories/componentRepository';
+import { getAllColorVariables } from '@/lib/repositories/colorVariableRepository';
+import { getComponentById, getAllComponents } from '@/lib/repositories/componentRepository';
+import { getAllFonts } from '@/lib/repositories/fontRepository';
+import { getAllStyles } from '@/lib/repositories/layerStyleRepository';
 
 import type { AgentToolGroup } from '@/lib/agent/tools/types';
 import type { Component, ComponentVariant, Layer } from '@/types';
@@ -107,6 +110,12 @@ export async function* runAgent(options: RunAgentOptions): AsyncIterable<Runtime
   const messages: AgentMessage[] = trimConversation([...options.messages]);
   const snapshotPageId = await injectActivePageSnapshot(messages, options.context?.pageId);
   await injectActiveComponentSnapshot(messages, options.context?.componentId, options.context?.variantId);
+  // Inject the site's design system (color variables, fonts, components, shared
+  // styles) so the agent always builds with the real tokens — even on a blank
+  // new page, where the page snapshot is empty and it would otherwise fall back
+  // to generic layout-template colors/fonts. `hasDesignSystem` marks projects
+  // that already have an established look to extend.
+  const hasDesignSystem = await injectDesignSystemSnapshot(messages);
   // While no mutating tool has run, the injected snapshot is still the live
   // truth, so a get_layers call for that page can be answered with a stub
   // instead of a second copy of the same tree.
@@ -117,7 +126,13 @@ export async function* runAgent(options: RunAgentOptions): AsyncIterable<Runtime
   // the variety of the output. A brief anywhere in the conversation counts.
   // Enforcement is single-shot (one corrective result), mirroring
   // NO_OP_CORRECTION, so a non-compliant model can never loop.
+  //
+  // Only enforce the brief on a genuinely NEW project (no existing design
+  // system). When the site already has colors/components/styles, a new page
+  // must EXTEND that look, not invent a fresh creative direction — so we skip
+  // the brief and rely on the injected design-system summary + reuse guidance.
   const activePageIsBlank = snapshotPageId !== null && await isPageBlank(snapshotPageId);
+  const enforceCreativeBrief = activePageIsBlank && !hasDesignSystem;
   let briefRecorded = conversationHasDesignBrief(messages);
   let briefCorrectionTurn: number | null = null;
 
@@ -304,7 +319,7 @@ export async function* runAgent(options: RunAgentOptions): AsyncIterable<Runtime
         continue;
       }
       if (
-        !briefRecorded && activePageIsBlank
+        !briefRecorded && enforceCreativeBrief
         && (briefCorrectionTurn === null || briefCorrectionTurn === turn)
         && isFullBuildCall(call) && call.input.page_id === snapshotPageId
       ) {
@@ -502,7 +517,8 @@ async function executeTool(
  * this is belt and suspenders — it stops the agent from claiming it published.
  */
 const AGENT_POLICY = [
-  'Before building a NEW design on a blank page (creative mode 3), call design_brief first to commit to a creative direction — personality, palette, typography, signature move. The first add_layout / batch_operations on a blank page is refused until a brief exists. Skip it for edits to existing pages and reference recreations. If the user wants a specific aesthetic, encourage them to paste a screenshot of the direction — images improve results far more than adjectives.',
+  'When a design-system summary is included with the user\'s message, the site already has an established look — reuse those exact color variables, fonts, components, and styles for ALL new work (including a brand-new page), and after any add_layout restyle the template\'s placeholder colors/fonts to those tokens so it matches. Do not invent a new palette or typography in this case.',
+  'Only when there is NO existing design system (a genuinely new project, creative mode 3) call design_brief first to commit to a creative direction — personality, palette, typography, signature move; the first add_layout / batch_operations on such a blank page is refused until a brief exists. Skip the brief for edits to existing pages, reference recreations, and any project that already has a design system. If the user wants a specific aesthetic, encourage them to paste a screenshot of the direction — images improve results far more than adjectives.',
   'Never publish. The user controls publishing — they review your changes on the canvas and click the Publish button when ready.',
   'Do not call any publish tool and do not tell the user their changes are live. Leave everything as drafts.',
   'Only describe edits you actually performed with tools. If you intend to make changes, call the tools to make them in the same turn — never reply that something is done, saved, or drafted unless you have already called the tools that did it.',
@@ -684,6 +700,96 @@ function isFullBuildCall(call: AgentToolUseBlock): boolean {
     return Array.isArray(operations) && operations.length >= 5;
   }
   return false;
+}
+
+/** Cap on how many components/styles to list so the injected block stays small
+ * on token-heavy projects (names are enough for the agent to know what exists). */
+const MAX_DESIGN_SYSTEM_ITEMS = 40;
+
+/**
+ * Prepend a compact summary of the site's design system — color variables,
+ * fonts, components, and shared styles — to the latest user turn, so the agent
+ * always has the real tokens to build with instead of falling back to generic
+ * layout-template colors/fonts (the failure where new pages look bolted-on).
+ *
+ * Injected into the user message (not the cached system prompt) so the static
+ * system block stays cache-friendly, and scoped to this turn only.
+ *
+ * @returns true when the project already has an established design system
+ *   (any color variables, components, or shared styles) — i.e. new pages should
+ *   extend that look rather than invent a fresh creative direction.
+ */
+async function injectDesignSystemSnapshot(messages: AgentMessage[]): Promise<boolean> {
+  let colorVariables: Awaited<ReturnType<typeof getAllColorVariables>> = [];
+  let fonts: Awaited<ReturnType<typeof getAllFonts>> = [];
+  let components: Awaited<ReturnType<typeof getAllComponents>> = [];
+  let styles: Awaited<ReturnType<typeof getAllStyles>> = [];
+  try {
+    [colorVariables, fonts, components, styles] = await Promise.all([
+      getAllColorVariables().catch(() => []),
+      getAllFonts().catch(() => []),
+      getAllComponents().catch(() => []),
+      getAllStyles().catch(() => []),
+    ]);
+  } catch (error) {
+    console.error('[ai-agent] failed to load design system snapshot:', error);
+    return false;
+  }
+
+  // Color variables, components, and shared styles are deliberate design-system
+  // artifacts; their presence means someone established a look to extend. Fonts
+  // can exist by default, so they don't by themselves flag an existing system.
+  const hasDesignSystem = colorVariables.length > 0 || components.length > 0 || styles.length > 0;
+
+  const sections: string[] = [];
+  if (colorVariables.length > 0) {
+    const list = colorVariables
+      .map((variable) => `"${variable.name}" → var(--${variable.id}) (${variable.value})`)
+      .join('; ');
+    sections.push(
+      `- Color variables (reference in design as var(--<id>), never re-hardcode these hex values): ${list}`,
+    );
+  }
+  if (fonts.length > 0) {
+    const list = fonts
+      .map((font) => `"${font.family}"${font.category ? ` (${font.category})` : ''}`)
+      .join('; ');
+    sections.push(`- Fonts (set as fontFamily; do not add a new Google Font when one of these fits): ${list}`);
+  }
+  if (components.length > 0) {
+    const shown = components.slice(0, MAX_DESIGN_SYSTEM_ITEMS);
+    const list = shown.map((component) => `"${component.name}" (id: ${component.id})`).join('; ');
+    const suffix = components.length > shown.length ? `; …and ${components.length - shown.length} more` : '';
+    sections.push(
+      `- Components (reuse via add_component_instance / replace_layer_with_component instead of rebuilding — load_tools "components" first): ${list}${suffix}`,
+    );
+  }
+  if (styles.length > 0) {
+    const shown = styles.slice(0, MAX_DESIGN_SYSTEM_ITEMS);
+    const list = shown.map((style) => `"${style.name}" (id: ${style.id})`).join('; ');
+    const suffix = styles.length > shown.length ? `; …and ${styles.length - shown.length} more` : '';
+    sections.push(
+      `- Shared styles (apply via apply_style instead of re-styling — load_tools "styles" first): ${list}${suffix}`,
+    );
+  }
+
+  if (sections.length === 0) return hasDesignSystem;
+
+  const lastUserIndex = findLastIndex(messages, (message) => message.role === 'user');
+  if (lastUserIndex === -1) return hasDesignSystem;
+
+  const block: AgentContentBlock = {
+    type: 'text',
+    text:
+      'The site already has this design system — reuse these EXACT tokens so new work matches the existing look. ' +
+      'This applies to building a brand-new page too: extend this system rather than inventing new colors/fonts. ' +
+      'Layout templates ship with generic placeholder colors/fonts — after add_layout, restyle them to these tokens.\n' +
+      sections.join('\n'),
+  };
+
+  const target = messages[lastUserIndex];
+  messages[lastUserIndex] = { ...target, content: [block, ...target.content] };
+  return hasDesignSystem;
 }
 
 async function injectActivePageSnapshot(
