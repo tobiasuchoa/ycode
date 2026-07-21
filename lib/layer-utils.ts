@@ -2791,8 +2791,11 @@ export function replaceLayerWithComponentInstance(
 ): Layer[] {
   return layers.map((layer) => {
     if (layer.id === layerId) {
+      // Drop the original customName so the instance shows the component's
+      // name instead of the layer's previous rename.
+      const { customName: _customName, ...rest } = layer;
       return {
-        ...layer,
+        ...rest,
         componentId,
         children: [],
       };
