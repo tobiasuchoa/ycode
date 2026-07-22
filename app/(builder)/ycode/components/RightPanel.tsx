@@ -1,8 +1,9 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useAgentSettingsStore } from '@/stores/useAgentSettingsStore';
 import { useAiChatStore } from '@/stores/useAiChatStore';
 
 import AiChatPanel from './ai/AiChatPanel';
@@ -18,11 +19,20 @@ interface RightPanelProps {
  * Right-hand column shell hosting the top-level Human / Agent switch.
  * "Human" surfaces the manual property editor (Design / Settings /
  * Interactions) that lives in RightSidebar; "Agent" surfaces the AI chat.
+ *
+ * When the agent is turned off in Settings → Agent, the switch is hidden
+ * entirely and only the manual editor is rendered.
  */
 export default function RightPanel({ onLayerUpdate }: RightPanelProps) {
   const isAgent = useAiChatStore((state) => state.isOpen);
   const open = useAiChatStore((state) => state.open);
   const close = useAiChatStore((state) => state.close);
+  const agentEnabled = useAgentSettingsStore((state) => state.status?.agentEnabled ?? true);
+  const loadStatus = useAgentSettingsStore((state) => state.loadStatus);
+
+  useEffect(() => {
+    void loadStatus();
+  }, [loadStatus]);
 
   const handleModeChange = (value: string) => {
     if (value === 'agent') {
@@ -31,6 +41,10 @@ export default function RightPanel({ onLayerUpdate }: RightPanelProps) {
       close();
     }
   };
+
+  if (!agentEnabled) {
+    return <RightSidebar onLayerUpdate={onLayerUpdate} />;
+  }
 
   return (
     <div className="w-64 shrink-0 bg-background border-l flex flex-col h-full overflow-hidden">

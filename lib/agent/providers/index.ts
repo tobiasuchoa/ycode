@@ -58,6 +58,12 @@ export async function getAgentProvider(requestedModel?: string | null): Promise<
 }> {
   const config = await resolveAgentConfig();
 
+  if (!config.agentEnabled) {
+    throw new AgentConfigurationError(
+      'The AI agent is turned off for this project. Enable it in Settings → Agent to use the AI builder.',
+    );
+  }
+
   let model = config.model;
   if (
     requestedModel &&

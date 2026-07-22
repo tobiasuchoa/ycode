@@ -40,6 +40,7 @@ export const PROVIDER_KEY_SETTINGS: Record<AgentProviderId, string> = {
 
 export const SETTING_MODEL = 'ai_model';
 export const SETTING_ENABLED_MODELS = 'ai_enabled_models';
+export const SETTING_AGENT_ENABLED = 'ai_agent_enabled';
 
 /** All settings keys that store a provider secret. */
 export const AI_SECRET_SETTING_KEYS: string[] = Object.values(PROVIDER_KEY_SETTINGS);
@@ -57,6 +58,9 @@ export interface ResolvedAgentConfig {
   providers: Record<AgentProviderId, ResolvedProviderKey>;
   /** True when at least one provider has a usable key. */
   configured: boolean;
+  /** Whether the agent is enabled at all. Defaults to true; when false the
+   * builder hides the Agent tab and the chat API refuses to run. */
+  agentEnabled: boolean;
   /** Default model: always allowed, enabled, and served by a configured provider
    * — unless it's a custom env override outside the allowlist. */
   model: string;
@@ -85,6 +89,7 @@ export async function resolveAgentConfig(): Promise<ResolvedAgentConfig> {
     ...AI_SECRET_SETTING_KEYS,
     SETTING_MODEL,
     SETTING_ENABLED_MODELS,
+    SETTING_AGENT_ENABLED,
   ]).catch(() => ({} as Record<string, unknown>));
 
   const providers = {} as Record<AgentProviderId, ResolvedProviderKey>;
@@ -100,6 +105,9 @@ export async function resolveAgentConfig(): Promise<ResolvedAgentConfig> {
   }
 
   const configured = AGENT_PROVIDERS.some((provider) => providers[provider.id].apiKey !== null);
+  // Opt-out flag: only an explicit `false` disables the agent, so existing
+  // projects (no row stored) keep the agent on.
+  const agentEnabled = settings[SETTING_AGENT_ENABLED] !== false;
   const enabledModels = sanitizeEnabledModels(settings[SETTING_ENABLED_MODELS]);
 
   let model = asNonEmptyString(settings[SETTING_MODEL])
@@ -120,7 +128,7 @@ export async function resolveAgentConfig(): Promise<ResolvedAgentConfig> {
     }
   }
 
-  return { providers, configured, model, enabledModels };
+  return { providers, configured, agentEnabled, model, enabledModels };
 }
 
 /** Coerce a stored enabled-models value into a valid non-empty allowlist subset. */

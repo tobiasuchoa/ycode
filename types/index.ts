@@ -1293,6 +1293,8 @@ export interface AgentProviderKeyStatus {
 export interface AgentSettingsStatus {
   /** Whether at least one provider has an API key. */
   configured: boolean;
+  /** Whether the agent is enabled in the builder (defaults to true). */
+  agentEnabled: boolean;
   /** Per-provider key status. */
   providers: Record<AgentProviderId, AgentProviderKeyStatus>;
   /** Default model id. */
@@ -1306,6 +1308,7 @@ export interface UpdateAgentSettingsData {
   keys?: Partial<Record<AgentProviderId, string | null>>;
   model?: string;
   enabledModels?: string[];
+  agentEnabled?: boolean;
 }
 
 // Color Variables

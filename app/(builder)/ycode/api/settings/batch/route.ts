@@ -13,6 +13,7 @@ const DRAFT_ONLY_SETTING_KEYS = new Set([
   ...AI_SECRET_SETTING_KEYS,
   'ai_model',
   'ai_enabled_models',
+  'ai_agent_enabled',
 ]);
 
 /**

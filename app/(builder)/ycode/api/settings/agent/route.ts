@@ -5,6 +5,7 @@ import {
   PROVIDER_KEY_SETTINGS,
   resolveAgentConfig,
   sanitizeEnabledModels,
+  SETTING_AGENT_ENABLED,
   SETTING_ENABLED_MODELS,
   SETTING_MODEL,
 } from '@/lib/agent/config';
@@ -47,6 +48,7 @@ const putSchema = z.object({
     .optional(),
   model: z.string().optional(),
   enabledModels: z.array(z.string()).optional(),
+  agentEnabled: z.boolean().optional(),
 });
 
 /**
@@ -87,6 +89,11 @@ export async function PUT(request: NextRequest) {
       updates[SETTING_ENABLED_MODELS] = enabled;
     }
 
+    if (body.agentEnabled !== undefined) {
+      // Store only the opt-out; `null` deletes the row so "on" stays the default.
+      updates[SETTING_AGENT_ENABLED] = body.agentEnabled ? null : false;
+    }
+
     if (Object.keys(updates).length > 0) {
       await setSettings(updates);
     }
@@ -121,6 +128,7 @@ function toStatusPayload(config: ResolvedAgentConfig) {
   }
   return {
     configured: config.configured,
+    agentEnabled: config.agentEnabled,
     providers,
     model: config.model,
     enabledModels: config.enabledModels,

@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
+import { Switch } from '@/components/ui/switch';
 import AgentKeyForm from '@/app/(builder)/ycode/components/ai/AgentKeyForm';
 import { agentSettingsApi } from '@/lib/api';
 import { AGENT_MODELS, AGENT_PROVIDERS } from '@/lib/agent/models';
@@ -53,6 +54,7 @@ export default function AgentSettingsPage() {
   const [isSavingDefault, setIsSavingDefault] = useState(false);
   const [providerToRemove, setProviderToRemove] = useState<AgentProviderOption | null>(null);
   const [isRemoving, setIsRemoving] = useState(false);
+  const [isSavingEnabled, setIsSavingEnabled] = useState(false);
 
   useEffect(() => {
     void loadStatus(true);
@@ -72,6 +74,15 @@ export default function AgentSettingsPage() {
       enabledModels.includes(option.id) &&
       status?.providers[option.provider]?.configured,
   );
+
+  const handleToggleAgent = async (checked: boolean) => {
+    try {
+      setIsSavingEnabled(true);
+      await saveSettings({ agentEnabled: checked });
+    } finally {
+      setIsSavingEnabled(false);
+    }
+  };
 
   const handleToggleModel = async (modelId: string, checked: boolean) => {
     if (!status) return;
@@ -140,6 +151,7 @@ export default function AgentSettingsPage() {
   }
 
   const showAddForm = isAddOpen || connectedProviders.length === 0;
+  const agentEnabled = status?.agentEnabled ?? true;
 
   return (
     <div className="p-8">
@@ -149,44 +161,76 @@ export default function AgentSettingsPage() {
         </header>
 
         <p className="text-sm text-muted-foreground pb-5">
-          Connect your own AI to build and edit pages with the agent. Add one provider at a
-          time — usage is billed directly to your account with that provider.
+          Build and edit pages with an AI agent, right inside the builder.
         </p>
 
-        <div className="flex flex-col gap-4">
-          {connectedProviders.map((provider) => (
-            <ProviderCard
-              key={provider.id}
-              provider={provider}
-              status={status}
-              enabledModels={enabledModels}
-              isSavingModels={isSavingModels}
-              onToggleModel={handleToggleModel}
-              onRemove={() => setProviderToRemove(provider)}
-            />
-          ))}
-
-          {showAddForm && availableProviders.length > 0 ? (
-            <AddProviderCard
-              providers={availableProviders}
-              isFirst={connectedProviders.length === 0}
-              onDone={() => setIsAddOpen(false)}
-              onCancel={connectedProviders.length > 0 ? () => setIsAddOpen(false) : undefined}
-            />
-          ) : availableProviders.length > 0 ? (
-            <div>
-              <Button
-                variant="secondary"
-                onClick={() => setIsAddOpen(true)}
-              >
-                <Icon name="plus" />
-                Add new
-              </Button>
+        <div className="flex items-start gap-4 bg-secondary/20 p-8 rounded-lg">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <FieldLabel htmlFor="agent-enabled" className="mb-0">
+                Agent in builder
+              </FieldLabel>
+              {isSavingEnabled && <Spinner className="size-3.5" />}
             </div>
-          ) : null}
+            <FieldDescription className="mb-0">
+              Show the Agent tab in the builder. Turn off to use Ycode in manual mode only.
+            </FieldDescription>
+          </div>
+          <Switch
+            id="agent-enabled"
+            checked={agentEnabled}
+            disabled={isSavingEnabled}
+            onCheckedChange={handleToggleAgent}
+          />
         </div>
 
-        {connectedProviders.length > 0 && (
+        {agentEnabled && (
+          <>
+            <header className="pt-10 pb-3">
+              <span className="text-base font-medium">AI providers</span>
+            </header>
+
+            <p className="text-sm text-muted-foreground pb-5">
+              Connect your own AI to power the agent. Add one provider at a time — usage is
+              billed directly to your account with that provider.
+            </p>
+
+            <div className="flex flex-col gap-4">
+              {connectedProviders.map((provider) => (
+                <ProviderCard
+                  key={provider.id}
+                  provider={provider}
+                  status={status}
+                  enabledModels={enabledModels}
+                  isSavingModels={isSavingModels}
+                  onToggleModel={handleToggleModel}
+                  onRemove={() => setProviderToRemove(provider)}
+                />
+              ))}
+
+              {showAddForm && availableProviders.length > 0 ? (
+                <AddProviderCard
+                  providers={availableProviders}
+                  isFirst={connectedProviders.length === 0}
+                  onDone={() => setIsAddOpen(false)}
+                  onCancel={connectedProviders.length > 0 ? () => setIsAddOpen(false) : undefined}
+                />
+              ) : availableProviders.length > 0 ? (
+                <div>
+                  <Button
+                    variant="secondary"
+                    onClick={() => setIsAddOpen(true)}
+                  >
+                    <Icon name="plus" />
+                    Add new
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          </>
+        )}
+
+        {agentEnabled && connectedProviders.length > 0 && (
           <>
             <header className="pt-10 pb-3">
               <span className="text-base font-medium">Preferences</span>
@@ -297,7 +341,7 @@ function ProviderCard({
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <FieldLegend className="mb-0">{provider.label}</FieldLegend>
+            <FieldLabel className="mb-0">{provider.label}</FieldLabel>
             <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">
               <span className="size-1.5 rounded-full bg-green-500" />
               Connected
@@ -311,7 +355,7 @@ function ProviderCard({
           <p className="text-xs text-muted-foreground truncate">
             {usesEnvKey
               ? 'Key provided by an environment variable on your server.'
-              : `API key ${keyStatus?.maskedKey ?? ''} — stored on your server, never sent to the browser.`}
+              : `API key ${keyStatus?.maskedKey ?? ''}`}
           </p>
         </div>
 
@@ -386,7 +430,7 @@ function ProviderCard({
           {models.map((option) => (
             <label
               key={option.id}
-              className="flex items-center gap-2 text-sm cursor-pointer w-fit"
+              className="flex items-center gap-2 text-xs cursor-pointer w-fit"
             >
               <Checkbox
                 checked={enabledModels.includes(option.id)}

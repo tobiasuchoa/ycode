@@ -61,6 +61,7 @@ import { useLiveComponentUpdates } from '@/hooks/use-live-component-updates';
 import { useLiveLayerStyleUpdates } from '@/hooks/use-live-layer-style-updates';
 
 // 4. Stores
+import { useAgentSettingsStore } from '@/stores/useAgentSettingsStore';
 import { useAuthStore } from '@/stores/useAuthStore';
 import { useClipboardStore } from '@/stores/useClipboardStore';
 import { useEditorStore } from '@/stores/useEditorStore';
@@ -109,6 +110,10 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
 
   // Role-based access
   const { isEditor, canEditStructure } = useRole();
+
+  // Agent can be turned off in Settings → Agent; the builder then only shows
+  // manual mode (RightPanel handles its own fallback, this gates the CMS panel).
+  const agentEnabled = useAgentSettingsStore((state) => state.status?.agentEnabled ?? true);
   const canEditStructureRef = useRef(canEditStructure);
   canEditStructureRef.current = canEditStructure;
 
@@ -2336,7 +2341,7 @@ export default function YCodeBuilder({ children }: YCodeBuilderProps = {} as YCo
               <Suspense fallback={null}>
                 <CMS />
               </Suspense>
-              {!isEditor && (
+              {!isEditor && agentEnabled && (
                 <div className="w-64 shrink-0 bg-background border-l flex flex-col h-full overflow-hidden">
                   <div className="px-4 pt-4 shrink-0">
                     <div className="flex h-8 items-center">
