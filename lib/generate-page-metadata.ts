@@ -18,12 +18,9 @@ import { getAllPublishedPageFolders } from '@/lib/repositories/pageFolderReposit
 import { getSlugTranslationsByLocale } from '@/lib/repositories/translationRepository';
 import { buildSvgDataUrl, getAssetProxyUrl } from '@/lib/asset-utils';
 import { generateColorVariablesCss } from '@/lib/repositories/colorVariableRepository';
-import { buildPageHreflangAlternates } from '@/lib/hreflang-utils';
+import { buildPageHreflangAlternates, type HreflangAlternate } from '@/lib/hreflang-utils';
 import { getTranslatableKey } from '@/lib/locale-runtime';
 import { buildAbsolutePageUrl, getSiteBaseUrl } from '@/lib/url-utils';
-
-/** Languages map shape Next.js expects under `metadata.alternates.languages`. */
-type MetadataLanguages = NonNullable<NonNullable<Metadata['alternates']>['languages']>;
 
 /**
  * Global page render settings fetched once per page render
@@ -207,19 +204,23 @@ const fetchHreflangDataset = cache(async (): Promise<HreflangDataset> => {
 });
 
 /**
- * Build the `metadata.alternates.languages` map for a page on a multilingual
- * site. Returns null when hreflang shouldn't be emitted (single locale, no
- * absolute base URL, or no resolvable alternates).
+ * Build the hreflang alternates for a page on a multilingual site. Returns an
+ * empty array when hreflang shouldn't be emitted (single locale or no
+ * resolvable alternates). Rendered as lowercase `<link rel="alternate"
+ * hreflang>` tags (see HreflangAlternateLinks) rather than via Next's
+ * `metadata.alternates.languages`, which React 19 emits as camelCase `hrefLang`.
  */
-async function buildHreflangLanguages(
+export async function buildPageHreflangAlternatesForPage(
   page: Page,
   baseUrl: string,
-  collectionItem?: CollectionItemWithValues
-): Promise<MetadataLanguages | null> {
+  collectionItem?: CollectionItemWithValues,
+   
+  tenantId?: string
+): Promise<HreflangAlternate[]> {
   const { locales, folders, translationsByLocale } = await fetchHreflangDataset();
 
   if (locales.length <= 1) {
-    return null;
+    return [];
   }
 
   // Dynamic pages need the collection item's slug to resolve per-locale URLs.
@@ -232,7 +233,7 @@ async function buildHreflangLanguages(
     }
     : null;
 
-  const alternates = buildPageHreflangAlternates({
+  return buildPageHreflangAlternates({
     page,
     folders,
     baseUrl,
@@ -240,16 +241,6 @@ async function buildHreflangLanguages(
     translationsByLocale,
     dynamicSlug,
   });
-
-  if (alternates.length === 0) {
-    return null;
-  }
-
-  const languages: MetadataLanguages = {};
-  for (const alt of alternates) {
-    languages[alt.hreflang as keyof MetadataLanguages] = alt.href;
-  }
-  return languages;
 }
 
 /**
@@ -334,23 +325,10 @@ export async function generatePageMetadata(
       };
     }
 
-    // Add hreflang alternates for multilingual sites. Skipped for error pages
-    // and noindex pages (excluded from the language cluster, mirroring the
-    // sitemap), and requires an absolute base URL to emit valid links.
-    if (siteBaseUrl && !isErrorPage && !seo?.noindex) {
-      try {
-        const languages = await buildHreflangLanguages(page, siteBaseUrl, collectionItem);
-        if (languages) {
-          metadata.alternates = {
-            ...metadata.alternates,
-            languages,
-          };
-        }
-      } catch (error) {
-        // Non-fatal: a page should still render without hreflang links.
-        console.error('Failed to generate hreflang alternates:', error);
-      }
-    }
+    // hreflang alternates are rendered as lowercase <link> tags in the page
+    // head (see HreflangAlternateLinks / PageRenderer), not via
+    // metadata.alternates.languages — React 19 emits that map's `hrefLang`
+    // prop verbatim, but the HTML/Google standard is lowercase `hreflang`.
   }
 
   // Add custom favicon and web clip (apple-touch-icon) — applies to preview too.
