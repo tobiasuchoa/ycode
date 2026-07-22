@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { getAgentProvider, AgentConfigurationError } from '@/lib/agent/providers';
 import { runAgent } from '@/lib/agent/runtime';
 import { getAuthUser } from '@/lib/supabase-auth';
+import { getTenantIdFromHeaders } from '@/lib/supabase-server';
 import type { AgentContentBlock, AgentMessage } from '@/lib/agent/providers/types';
 
 /**
@@ -21,21 +22,29 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
 
 /**
- * Lightweight in-process rate limiter. The editor is single-tenant per instance,
- * so a global sliding window is enough to bound runaway cost from rapid-fire
- * requests. (Cloud applies its own per-tenant limits in the overlay.)
+ * Lightweight in-process rate limiter with a per-tenant sliding window, bounding
+ * runaway cost from rapid-fire requests. Keyed by tenant so one tenant can never
+ * exhaust another's budget; single-tenant deployments resolve to one shared
+ * bucket (tenant id is null).
  */
 const RATE_LIMIT_MAX = 30;
 const RATE_LIMIT_WINDOW_MS = 60_000;
-const requestTimestamps: number[] = [];
+const requestTimestampsByTenant = new Map<string, number[]>();
 
-function isRateLimited(): boolean {
+function isRateLimited(tenantId: string | null): boolean {
+  const key = tenantId ?? 'global';
   const now = Date.now();
-  while (requestTimestamps.length > 0 && now - requestTimestamps[0] > RATE_LIMIT_WINDOW_MS) {
-    requestTimestamps.shift();
+  const recent = (requestTimestampsByTenant.get(key) ?? []).filter(
+    (timestamp) => now - timestamp <= RATE_LIMIT_WINDOW_MS,
+  );
+
+  if (recent.length >= RATE_LIMIT_MAX) {
+    requestTimestampsByTenant.set(key, recent);
+    return true;
   }
-  if (requestTimestamps.length >= RATE_LIMIT_MAX) return true;
-  requestTimestamps.push(now);
+
+  recent.push(now);
+  requestTimestampsByTenant.set(key, recent);
   return false;
 }
 
@@ -66,7 +75,8 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: Request): Promise<Response> {
-  if (isRateLimited()) {
+  const tenantId = await getTenantIdFromHeaders();
+  if (isRateLimited(tenantId)) {
     return NextResponse.json(
       { error: 'Too many requests. Please wait a moment and try again.' },
       { status: 429 },
