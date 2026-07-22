@@ -10,6 +10,7 @@
  */
 
 import React from 'react';
+import { flushSync } from 'react-dom';
 import { createRoot, Root } from 'react-dom/client';
 import { toBlob } from 'html-to-image';
 
@@ -132,33 +133,40 @@ async function captureLayersAsBlob(
     const mountPoint = doc.getElementById('thumbnail-mount');
     if (!mountPoint) throw new Error('Mount point not found');
 
-    // Render layers into the iframe
+    // Render layers into the iframe. createRoot().render() is asynchronous
+    // (concurrent React), and the offscreen iframe's rAF timing is unreliable,
+    // so waiting frames alone can race the commit and "#component-preview"
+    // may not exist yet when queried below. flushSync forces the commit to
+    // complete before we continue.
     root = createRoot(mountPoint);
-    root.render(
-      <div
-        id="component-preview"
-        style={{
-          background: 'white',
-          minHeight: '400px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <div style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
-          <LayerRenderer
-            layers={resolvedLayers}
-            isEditMode={false}
-            isPublished={false}
-            pageId="thumbnail"
-          />
+    const reactRoot = root;
+    flushSync(() => {
+      reactRoot.render(
+        <div
+          id="component-preview"
+          style={{
+            background: 'white',
+            minHeight: '400px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <div style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
+            <LayerRenderer
+              layers={resolvedLayers}
+              isEditMode={false}
+              isPublished={false}
+              pageId="thumbnail"
+            />
+          </div>
         </div>
-      </div>
-    );
+      );
+    });
 
-    // Wait for React to render + styles to apply. With precompiled CSS the
-    // styles resolve synchronously, so a couple of frames to let layout settle
-    // is enough; otherwise give the Tailwind CDN JIT time to process classes.
+    // Wait for styles to apply and layout to settle. With precompiled CSS the
+    // styles resolve synchronously, so a couple of frames is enough; otherwise
+    // give the Tailwind CDN JIT time to process classes.
     if (precompiledCss) {
       await waitForFrames(iframe.contentWindow, 2);
     } else {
