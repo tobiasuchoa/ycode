@@ -2,6 +2,7 @@ import AnimationInitializer from '@/components/AnimationInitializer';
 import BodyClassApplier from '@/components/BodyClassApplier';
 import ContentHeightReporter from '@/components/ContentHeightReporter';
 import CustomCodeInjector from '@/components/CustomCodeInjector';
+import HreflangAlternateLinks from '@/components/HreflangAlternateLinks';
 import LayerRendererPublic from '@/components/LayerRendererPublic';
 import SliderInitializer from '@/components/SliderInitializer';
 import LightboxInitializer from '@/components/LightboxInitializer';
@@ -28,6 +29,9 @@ import { buildGlobalsMetaMap, buildGlobalsValueMap } from '@/lib/collection-fiel
 import { buildLocalizedPageUrls, type LocalizedDynamicSlug } from '@/lib/page-utils';
 import { getTranslatableKey } from '@/lib/locale-runtime';
 import { getSlugTranslationsByLocale } from '@/lib/repositories/translationRepository';
+import { buildPageHreflangAlternatesForPage } from '@/lib/generate-page-metadata';
+import { getSiteBaseUrl } from '@/lib/url-utils';
+import type { HreflangAlternate } from '@/lib/hreflang-utils';
 import type { Layer, BackgroundsDesign, Component, Page, CollectionItemWithValues, CollectionField, Locale, PageFolder, PasswordProtectionContext, Translation } from '@/types';
 
 interface PageLinkRef { collection_item_id: string; page_id: string }
@@ -722,6 +726,25 @@ export default async function PageRenderer({
       )
       : undefined;
 
+  // Build hreflang alternates for multilingual sites. Rendered as lowercase
+  // <link rel="alternate" hreflang> tags below (not via Next metadata, which
+  // emits camelCase hrefLang). Skipped for previews, error pages, and noindex
+  // pages, mirroring the sitemap's language cluster.
+  let hreflangAlternates: HreflangAlternate[] = [];
+  if (!isPreview && availableLocales.length > 1 && page.error_page === null && !page.settings?.seo?.noindex) {
+    try {
+      const globalCanonicalUrl = await getSettingByKey('global_canonical_url').catch(() => null);
+      const baseUrl = getSiteBaseUrl({
+        globalCanonicalUrl: typeof globalCanonicalUrl === 'string' ? globalCanonicalUrl : null,
+      });
+      if (baseUrl) {
+        hreflangAlternates = await buildPageHreflangAlternatesForPage(page, baseUrl, collectionItem);
+      }
+    } catch (error) {
+      console.error('[PageRenderer] Error building hreflang alternates:', error);
+    }
+  }
+
   return (
     <>
       {/* Global head code fallback when layout skips it (SKIP_SETUP mode) */}
@@ -731,6 +754,9 @@ export default async function PageRenderer({
 
       {/* Page-specific custom head code — React 19 hoists meta/link/style/title to <head> */}
       {pageCustomCodeHead && renderRootLayoutHeadCode(pageCustomCodeHead, 'page-head')}
+
+      {/* hreflang alternates for multilingual sites (lowercase attribute) */}
+      <HreflangAlternateLinks alternates={hreflangAlternates} />
 
       {/* Preload the LCP image so the browser starts the fetch from <head>
           rather than waiting until the parser reaches the <img> tag. Pairs
