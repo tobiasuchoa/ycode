@@ -71,13 +71,15 @@
 }
 
 /* Swiper needs a definite container width. When a slider ends up shrink-to-fit
-   (e.g. it lost its `w-full` at a breakpoint and sits in an `align-items:center`
-   flex parent), its `width:100%` slides create a circular layout that blows the
-   width up to the browser max — Swiper then measures that and sizes every slide
-   to it, leaving the slider effectively invisible. Capping to the container
-   width breaks the cycle without forcing a width, so explicit widths still win. */
+   (e.g. an `align-items:center` flex parent, or an `aspect-ratio` wrapper with
+   no definite width), its `width:100%` slides create a circular layout that
+   blows the width up to the browser max — Swiper then measures that and sizes
+   every slide to it, and any `aspect-ratio` ancestor amplifies it into a runaway
+   height. `contain: inline-size` decouples the slider's width from its contents
+   so it resolves from its containing block instead, breaking the cycle without
+   forcing a width — explicit widths still win. */
 [data-slider-id] {
-  max-width: 100%;
+  contain: inline-size;
 }
 
 /* Pre-init slider layout: size slides by the configured per-view before Swiper

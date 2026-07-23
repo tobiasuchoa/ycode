@@ -13,16 +13,18 @@
 .swiper-slide-invisible-blank { visibility: hidden; }
 
 /*
- * Slides default to Tailwind `w-full` (width:100%). When the slider has no
- * definite width (e.g. it lost `w-full` at a breakpoint and sits in an
- * `align-items:center` flex parent, making it shrink-to-fit), the percentage-
- * width chain becomes circular and the slider blows up to the browser max
- * width — Swiper then measures that and sizes every slide to it, leaving the
- * slider effectively invisible. Capping to the container width breaks the cycle
- * without forcing a width, so explicit widths still win. Mirrors the height fix
- * below and applies in both the canvas and published output.
+ * Slides default to Tailwind `w-full` (width:100%). When the slider sits in a
+ * shrink-to-fit context (e.g. an `align-items:center` flex parent, or an
+ * `aspect-ratio` wrapper with no definite width), the percentage-width chain
+ * becomes circular: the slider blows up to the browser max width, Swiper
+ * measures that and sizes every slide to it, and any `aspect-ratio` ancestor
+ * amplifies it into a runaway height too. `contain: inline-size` decouples the
+ * slider's own width from its (inflated) contents, so it resolves from its
+ * containing block or an aspect-ratio ancestor instead — breaking the cycle
+ * without forcing a width. Explicit widths still win. Applies in both the
+ * canvas and published output.
  */
-.swiper { max-width: 100%; }
+.swiper { contain: inline-size; }
 
 /*
  * Slides default to Tailwind `h-full` (height:100%). When the slider itself has
