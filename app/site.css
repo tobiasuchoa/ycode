@@ -82,24 +82,32 @@
   contain: inline-size;
 }
 
-/* Pre-init slider layout: size slides by the configured per-view before Swiper
-   JS initializes, preventing a flash where every slide is full-width (1 per
-   view) on load. Swiper sets exact inline widths on init which override these.
-   Values are resolved per breakpoint (desktop-first) into CSS vars on the
-   slider root by LayerRenderer. */
+/* Slides never shrink in the slider flex row. */
 [data-slider-id] > .swiper-wrapper > .swiper-slide {
   flex-shrink: 0;
+}
+
+/* Pre-init slide sizing for numeric multi-view sliders (per-view > 1): size
+   slides by the configured per-view before Swiper JS initializes, preventing a
+   flash where every full-width (`w-full`) slide shows one-per-view on load.
+   Only sliders with per-view > 1 carry `data-slider-presize` (see LayerRenderer)
+   so these rules intentionally override the slide's own width utility. Per-view
+   1 sliders are NOT marked, so their own slide width wins — e.g. a custom-width
+   peek carousel `w-[80%]` with slidesPerView 'auto'. Swiper sets exact inline
+   widths on init which override these. Values resolved per breakpoint
+   (desktop-first) into CSS vars on the slider root by LayerRenderer. */
+[data-slider-presize] > .swiper-wrapper > .swiper-slide {
   width: calc(100% / var(--ycode-spv-mobile, 1));
 }
 
 @media (min-width: 768px) {
-  [data-slider-id] > .swiper-wrapper > .swiper-slide {
+  [data-slider-presize] > .swiper-wrapper > .swiper-slide {
     width: calc(100% / var(--ycode-spv-tablet, var(--ycode-spv-mobile, 1)));
   }
 }
 
 @media (min-width: 1024px) {
-  [data-slider-id] > .swiper-wrapper > .swiper-slide {
+  [data-slider-presize] > .swiper-wrapper > .swiper-slide {
     width: calc(100% / var(--ycode-spv-desktop, var(--ycode-spv-tablet, var(--ycode-spv-mobile, 1))));
   }
 }

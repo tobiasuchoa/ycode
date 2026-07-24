@@ -70,6 +70,23 @@ export function maxResponsiveNumber(value: ResponsiveNumber | undefined, fallbac
 }
 
 /**
+ * Per-breakpoint per-view CSS vars used to pre-size slides before Swiper inits
+ * (prevents a 1-slide flash), or null when not needed. Only numeric multi-view
+ * sliders (per-view > 1 on some breakpoint) are pre-sized; per-view 1 sliders
+ * keep their own slide widths (e.g. custom-width peek carousels using 'auto').
+ * The presence of this object also gates the `data-slider-presize` marker.
+ */
+export function getSliderPresizeVars(settings: SliderSettings): Record<string, number> | null {
+  const spv = settings.groupSlide;
+  if (maxResponsiveNumber(spv, 1) <= 1) return null;
+  return {
+    '--ycode-spv-mobile': resolveResponsiveNumber(spv, 'mobile', 1),
+    '--ycode-spv-tablet': resolveResponsiveNumber(spv, 'tablet', 1),
+    '--ycode-spv-desktop': resolveResponsiveNumber(spv, 'desktop', 1),
+  };
+}
+
+/**
  * Snapshot React-applied inline CSS custom properties (e.g. --bg-img) on a
  * slider's slide elements and return a restore function. Swiper's
  * destroy(cleanStyles=true) wipes each slide's entire style attribute, which
