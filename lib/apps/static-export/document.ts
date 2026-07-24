@@ -193,8 +193,10 @@ const SLIDER_BOOT_SCRIPT = `
   }
 
   function buildConfig(s) {
-    var perView = function (bp) { return resolveResp(s.groupSlide, bp, 1); };
-    var perGroup = function (bp) { return Math.min(resolveResp(s.slidesPerGroup, bp, 1), perView(bp)); };
+    // Per view 1 defers to each slide's own CSS width ('auto'); >1 forces a count.
+    var perViewCount = function (bp) { return resolveResp(s.groupSlide, bp, 1); };
+    var perView = function (bp) { var c = perViewCount(bp); return c > 1 ? c : 'auto'; };
+    var perGroup = function (bp) { return Math.min(resolveResp(s.slidesPerGroup, bp, 1), perViewCount(bp)); };
     var config = {
       slidesPerView: perView('mobile'),
       slidesPerGroup: perGroup('mobile'),
